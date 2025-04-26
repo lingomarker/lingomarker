@@ -429,7 +429,7 @@
             console.log("Relation timestamp updated for:", entry.word);
 
             // Optional: Open dictionary link if still desired
-            // window.open(createDictionaryLink(entry.word), 'Lingea'); // Use base word
+            window.open(createDictionaryLink(entry.word), 'Lingea'); // Use base word
             // GM_openInTab(createDictionaryLink(entry.word), { active: false, setParent: true }); // Open in background
 
 
@@ -440,6 +440,10 @@
             console.error("Failed to update relation timestamp:", error);
             // Show user feedback?
         }
+    }
+
+    function createDictionaryLink(word) {
+        return `${dictBaseUrl}${encodeURI(word)}`;
     }
 
     function findEntryByWordForm(wordForm) {
