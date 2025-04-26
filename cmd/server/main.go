@@ -45,7 +45,7 @@ func main() {
 		fmt.Printf("  %s\n", absCaCertPath)
 		fmt.Println("Consult your browser/OS documentation on how to import and trust a CA certificate.")
 		fmt.Println("Restart your browser after trusting the certificate.")
-		fmt.Println("-----------------\n")
+		fmt.Print("-----------------\n\n")
 	}
 
 	// --- Database ---

@@ -513,7 +513,7 @@
 
 
         // Auto-close after a short time? Maybe not needed if click outside works well.
-        // setTimeout(() => closeDialog(dialog), 3000);
+        setTimeout(() => closeDialog(dialog), 3000);
 
         // Close on outside click (add after a short delay to prevent immediate close)
         setTimeout(() => {
@@ -525,6 +525,10 @@
         observeMutations(); // Reconnect after adding dialog and setting up listener
 
         return dialog;
+    }
+
+    function closeDialog(dialog) {
+        dialog.remove();
     }
 
     function closeDialogOnClickOutside(event) {
