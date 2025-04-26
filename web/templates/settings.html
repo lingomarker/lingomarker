@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+{{ template "head.html" . }}
+<body>
+    <h1>Settings Page</h1>
+    {{if .Error}}
+    <p style="color: red;">{{.Error}}</p>
+    {{end}}
+    <form method="POST" action="/settings">
+        <div>
+            <label for="name">Gemini API Key:</label>
+            <input type="text" id="geminiApiKey" name="geminiApiKey" required>
+        </div>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
