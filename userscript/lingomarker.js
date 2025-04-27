@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.4
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -1005,7 +1005,36 @@
     // --- Event Listeners ---
 
     function setupEventListeners() {
-        document.addEventListener('selectionchange', debouncedHandleSelection);
+        const touch = matchMedia('(hover: none), (pointer: coarse)').matches;
+
+        console.log("Touch support:", touch);
+
+        if (!touch) {
+            // Use mouseup for selection end detection - often more reliable than selectionchange
+            document.addEventListener('mouseup', () => {
+                // Use setTimeout to allow selectionchange to possibly fire first
+                // and to ensure the selection object is stable.
+                setTimeout(() => {
+                    const selection = window.getSelection();
+                    if (selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.toString().trim() !== '') {
+                        // Check if click was inside a highlight - handled by handleHighlightClick now
+                        const range = selection.getRangeAt(0);
+                        const commonAncestor = range.commonAncestorContainer;
+                        const isInsideHighlight = commonAncestor.parentElement?.closest('.lingomarker-highlight') || commonAncestor.classList?.contains('lingomarker-highlight');
+
+                        if (!isInsideHighlight) {
+                            // It's a new selection, not just a click on existing highlight
+                            handleSelection();
+                        } else {
+                            // Click inside existing highlight - selection might be browser artifact, clear it.
+                            selection.removeAllRanges();
+                        }
+                    }
+                }, 50); // Small delay
+            });
+        } else {
+            document.addEventListener('selectionchange', debouncedHandleSelection);
+        }
 
         // Keep visibility change listener
         document.addEventListener('visibilitychange', () => {
