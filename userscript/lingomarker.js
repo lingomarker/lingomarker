@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      0.2
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -43,38 +43,34 @@
 
     // --- Configuration ---
     const BACKEND_URL = 'https://dev.lingomarker.com:8443'; // Adjust port if needed
-    const HIGHLIGHT_COLOR = 'rgba(210, 210, 10, 0.4)';
+    // REMOVED: HIGHLIGHT_COLOR, WORDS_NUMBER_LIMIT, WORDS_LENGHT_LIMIT, DEFAULT_DICTIONARY_EN_SK, ALLOW_FRAGMENT_URL_LIST, dictBaseUrl
+
     const DEBOUNCE_TIME = 1000;
-    const MAX_HIGHLIGHTS = 10000; // Safety limit (client-side check still useful)
+    const MAX_HIGHLIGHTS = 10000;
     const PAGE_SIZE_LIMIT = 1000000;
-    const WORDS_NUMBER_LIMIT = 4;
-    const WORDS_LENGHT_LIMIT = 50;
-    // Dictionary URL - decide if you still want direct Lingea links or rely only on backend/training page
-    const DEFAULT_DICTIONARY_EN_SK = 'anglicko-slovensky'; // Example
-    let dictBaseUrl = `https://slovniky.lingea.sk/${DEFAULT_DICTIONARY_EN_SK}/`; // Keep if using Lingea links
-    const ALLOW_FRAGMENT_URL_LIST = ['https://www.nytimes.com/', 'https://developer.mozilla.org/'];
 
     // --- State ---
     let markInstance;
     let isHighlighting = false;
     let mutationObserverInstance = null;
     let lastTrigger = 0;
-    let userData = { // Store user data fetched from backend
-        entries: [],
-        urls: [],
-        paragraphs: [],
-        relations: []
-    };
-    let isAuthenticated = false; // Track auth status
-    let currentUser = null; // Store user info {username, name, userID}
+    let userData = { entries: [], urls: [], paragraphs: [], relations: [] };
+    let isAuthenticated = false;
+    let currentUser = null;
+
+    // --- Dynamic Settings (initialized with defaults, fetched from backend) ---
+    let highlightColor = 'rgba(210, 210, 10, 0.4)';
+    let wordsNumberLimit = 4;
+    let wordsLengthLimit = 50;
+    let dictBaseUrl = 'https://slovniky.lingea.sk/anglicko-slovensky/'; // Default dictionary URL
+    let allowFragmentUrlList = ['https://www.nytimes.com/', 'https://developer.mozilla.org/']; // Default list
 
     // --- Initialization ---
 
     async function initialize() {
         console.log("LingoMarker Script Initializing...");
-
-        // 1. Check Authentication Status
-        await checkAuthentication();
+        // 1. Check Auth & Fetch Settings (Combined)
+        await checkAuthAndFetchSettings(); // Renamed function
 
         if (!isAuthenticated) {
             console.warn("LingoMarker: User not authenticated. Features disabled.");
@@ -89,10 +85,12 @@
         }
 
         console.log("LingoMarker: User authenticated:", currentUser);
+        console.log("LingoMarker: Settings loaded:", { dictBaseUrl, highlightColor /* etc */ });
 
-        // 2. Apply Styles
-        applyStyles();
+        // 2. Apply Styles (needs update for dynamic color)
+        applyStyles(); // Call applyStyles AFTER settings are fetched
 
+        // ... (rest of initialize function: init Mark.js, fetch data, setup listeners) ...
         // 3. Initialize Mark.js
         if (document.body.textContent.length > PAGE_SIZE_LIMIT) {
             console.warn('Page too large for highlighting');
@@ -101,7 +99,7 @@
         markInstance = new Mark(document.body);
 
         // 4. Fetch User Data and Apply Initial Highlights
-        await fetchUserDataAndHighlight();
+        await fetchUserDataAndHighlight(); // Already applies highlights
 
         // 5. Setup Event Listeners and Observers
         setupEventListeners();
@@ -111,54 +109,78 @@
         registerMenuCommands();
 
         console.log("LingoMarker Script Initialized Successfully.");
+
     }
 
     function applyStyles() {
+        // 1. Inject base styles with CSS custom property placeholder
         GM_addStyle(`
-          .lingomarker-highlight { /* Renamed class */
-              background-color: ${HIGHLIGHT_COLOR} !important;
-              cursor: pointer;
-              transition: background-color 0.2s;
-               /* Remove dotted underline if not linking directly to dict */
-               /* text-decoration: underline dotted; */
-               text-decoration: none; /* Or keep if linking */
-               padding-bottom: 1px; /* Add slight space for underline */
-               border-bottom: 1px dotted currentColor; /* Use border instead */
-
-          }
-          .lingomarker-highlight:hover {
-              background-color: ${HIGHLIGHT_COLOR.replace('0.4', '0.6')} !important;
-          }
-          .lingomarker-dialog { /* Renamed class */
-              animation: lingomarker-fadein 0.15s ease-out;
-          }
-          .lingomarker-dialog a:hover {
-              text-decoration: underline !important;
-          }
-          @keyframes lingomarker-fadein {
-              from { opacity: 0; transform: translateY(-4px); }
-              to { opacity: 1; transform: translateY(0); }
-          }
-           /* Style for potential login prompt */
-           #lingomarker-login-prompt {
-               position: fixed;
-               top: 10px;
-               right: 10px;
-               padding: 10px 15px;
-               background-color: #f8d7da;
-               color: #721c24;
-               border: 1px solid #f5c6cb;
-               border-radius: 5px;
-               z-index: 9999999999999;
-               font-size: 14px;
-           }
-            #lingomarker-login-prompt a {
-                color: #721c24;
-                font-weight: bold;
-                text-decoration: underline;
-                cursor: pointer;
+            :root { /* Define property on root */
+                --lingomarker-highlight-bg: ${highlightColor}; /* Set initial/default value */
+                --lingomarker-highlight-bg-hover: ${highlightColor.replace('0.4', '0.6')}; /* Calculate hover default too */
             }
-      `);
+   
+            .lingomarker-highlight {
+                background-color: var(--lingomarker-highlight-bg) !important; /* Use the variable */
+                cursor: pointer;
+                transition: background-color 0.2s;
+                text-decoration: none;
+                padding-bottom: 1px;
+                border-bottom: 1px dotted currentColor;
+            }
+            .lingomarker-highlight:hover {
+                background-color: var(--lingomarker-highlight-bg-hover) !important; /* Use hover variable */
+            }
+            /* ... rest of styles (.lingomarker-dialog, keyframes, etc.) ... */
+            .lingomarker-dialog { /* Renamed class */
+               animation: lingomarker-fadein 0.15s ease-out;
+            }
+            .lingomarker-dialog a:hover {
+               text-decoration: underline !important;
+            }
+            @keyframes lingomarker-fadein {
+               from { opacity: 0; transform: translateY(-4px); }
+               to { opacity: 1; transform: translateY(0); }
+            }
+            #lingomarker-login-prompt { /* Style for potential login prompt */
+                /* ... */
+            }
+            #lingomarker-login-prompt a { /* ... */ }
+        `);
+
+        // 2. Update the CSS custom property value (called after settings are fetched)
+        updateHighlightColorStyle();
+    }
+
+    // New function to update the CSS variable
+    function updateHighlightColorStyle() {
+        const hoverColor = calculateHoverColor(highlightColor); // Helper to calculate hover variant
+        document.documentElement.style.setProperty('--lingomarker-highlight-bg', highlightColor);
+        document.documentElement.style.setProperty('--lingomarker-highlight-bg-hover', hoverColor);
+    }
+
+    // Helper function to calculate hover color (adjust opacity)
+    function calculateHoverColor(baseColor) {
+        try {
+            // Basic RGBA opacity increase
+            if (baseColor.startsWith('rgba(')) {
+                const parts = baseColor.match(/[\d.]+/g);
+                if (parts && parts.length === 4) {
+                    const alpha = parseFloat(parts[3]);
+                    const newAlpha = Math.min(1, alpha + 0.2); // Increase alpha by 0.2, max 1
+                    return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${newAlpha})`;
+                }
+            }
+            // Basic HEX alpha increase (if browsers support #RRGGBBAA) - less common/reliable
+            // Add more sophisticated color parsing/manipulation library if needed
+            // Fallback: just return the base color slightly darker maybe?
+            // For simplicity, just return a slightly modified default if calculation fails
+            return baseColor.includes('rgba') ? baseColor.replace(/(\d\.\d+)\)/, (match, p1) => `${Math.min(1, parseFloat(p1) + 0.2)})`) : 'rgba(210, 210, 10, 0.6)';
+
+        } catch (e) {
+            console.warn("Could not calculate hover color, using default.", e);
+            return 'rgba(210, 210, 10, 0.6)'; // Default hover
+        }
     }
 
     function showLoginPrompt() {
@@ -238,12 +260,37 @@
         });
     }
 
-    async function checkAuthentication() {
+    // Rename and modify this function
+    async function checkAuthAndFetchSettings() {
         try {
             const data = await apiRequest('GET', '/api/session');
-            if (data.authenticated) {
+            if (data.authenticated && data.settings) {
                 isAuthenticated = true;
-                currentUser = data; // Store user info {userID, username, name}
+                currentUser = { // Store only necessary user info
+                    userID: data.userID,
+                    username: data.username,
+                    name: data.name,
+                };
+
+                // --- Apply fetched settings ---
+                const settings = data.settings;
+                highlightColor = settings.highlightColor || highlightColor; // Use default if missing
+                wordsNumberLimit = settings.wordsNumberLimit || wordsNumberLimit;
+                wordsLengthLimit = settings.wordsLengthLimit || wordsLengthLimit;
+                dictBaseUrl = settings.dictBaseUrl || dictBaseUrl;
+
+                // Parse comma-separated list for allowFragmentUrlList
+                if (settings.allowFragmentUrlList && typeof settings.allowFragmentUrlList === 'string') {
+                    allowFragmentUrlList = settings.allowFragmentUrlList.split(',')
+                        .map(url => url.trim())
+                        .filter(url => url.length > 0); // Filter out empty strings
+                } else {
+                    // Use default if missing or invalid type
+                    allowFragmentUrlList = ['https://www.nytimes.com/', 'https://developer.mozilla.org/'];
+                }
+
+                // --- End Apply fetched settings ---
+
                 // Remove login prompt if it exists
                 const promptDiv = document.getElementById('lingomarker-login-prompt');
                 if (promptDiv) promptDiv.remove();
@@ -251,11 +298,16 @@
             } else {
                 isAuthenticated = false;
                 currentUser = null;
+                // Reset settings to default if auth fails or settings missing? Optional.
             }
         } catch (error) {
             isAuthenticated = false;
             currentUser = null;
             // Error already logged in apiRequest
+            // Reset settings to default on error?
+            // highlightColor = 'rgba(210, 210, 10, 0.4)';
+            // wordsNumberLimit = 4;
+            // ... reset others ...
         }
     }
 
@@ -501,9 +553,8 @@
         // Add click handler to the dialog itself
         dialog.addEventListener('click', (e) => {
             e.preventDefault();
-            e.stopPropagation(); // Prevent closing immediately
-            dialog.remove();
-            document.removeEventListener('click', closeDialogOnClickOutside, true); // Remove global listener
+            e.stopPropagation();
+            closeDialog(dialog); // Use closeDialog function
             if (callback) callback();
         });
 
@@ -516,14 +567,13 @@
         document.body.appendChild(dialog);
 
 
-        // Auto-close after a short time? Maybe not needed if click outside works well.
+        //  Auto-close after 3 seconds
         setTimeout(() => closeDialog(dialog), 3000);
 
-        // Close on outside click (add after a short delay to prevent immediate close)
+        /// ??? Close on outside click (add after a short delay to prevent immediate close)
         setTimeout(() => {
             document.addEventListener('click', closeDialogOnClickOutside, true);
         }, 50);
-
 
         // --- Reconnect observer ---
         observeMutations(); // Reconnect after adding dialog and setting up listener
@@ -532,7 +582,14 @@
     }
 
     function closeDialog(dialog) {
-        dialog.remove();
+        if (dialog && dialog.parentNode) { // Check if dialog exists and is in DOM
+            dialog.remove();
+            // Clean up the outside click listener if it was added for this dialog instance
+            // This might be tricky if multiple dialogs could exist briefly.
+            // A safer approach might be to associate the listener directly with the dialog
+            // or have the listener check if ANY dialogs remain before removing itself.
+            document.removeEventListener('click', closeDialogOnClickOutside, true); // Try removing the general listener
+        }
     }
 
     function closeDialogOnClickOutside(event) {
@@ -587,6 +644,7 @@
     async function getContextFromNode(node) {
         try {
             let element = node.parentNode;
+
             // Traverse up to find a meaningful block element (P, DIV, ARTICLE, etc.)
             // Avoid stopping at inline elements like SPAN, A, B, I, etc.
             const inlineTags = new Set(['SPAN', 'A', 'B', 'I', 'EM', 'STRONG', 'MARK', 'SUB', 'SUP', 'CODE']);
@@ -607,7 +665,7 @@
             const paragraphHash = await sha256(paragraphText);
 
             const nodeUrl = getUrlFromNode(node); // Use helper to get best URL
-            const url = ALLOW_FRAGMENT_URL_LIST.some(prefix => nodeUrl.startsWith(prefix))
+            const url = allowFragmentUrlList.some(prefix => nodeUrl.startsWith(prefix))
                 ? nodeUrl // Keep fragment for allowed sites
                 : nodeUrl.split('#')[0]; // Remove fragment otherwise
 
@@ -634,20 +692,23 @@
         if (!isAuthenticated) return; // Don't process if not logged in
 
         const selection = window.getSelection();
+        const node = selection.focusNode;
+        if (!node) return;
+
         const caption = selection.toString().trim().replace(/[.,?!"“”]/g, ''); // Clean basic punctuation
         const word = caption.toLowerCase(); // Use lowercase internally
 
         // Validate selection
         if (!word || word.includes('\n') || selection.rangeCount === 0) return; // Ignore multi-line or empty
         const wordCount = word.split(/\s+/).filter(Boolean).length;
-        if (wordCount === 0 || wordCount > WORDS_NUMBER_LIMIT || word.length > WORDS_LENGHT_LIMIT) return;
+        if (wordCount === 0 || wordCount > wordsNumberLimit || word.length > wordsLengthLimit) return;
 
         // --- Check if the selected word is already known ---
         const existingEntry = findEntryByWordForm(word);
         if (existingEntry) {
             console.log(`Word "${caption}" is already known (Base: ${existingEntry.word}). Updating context timestamp.`);
             // Update timestamp by re-sending mark request
-            const context = await getContextFromNode(selection.focusNode);
+            const context = await getContextFromNode(node);
             if (context) {
                 try {
                     await apiRequest('POST', '/api/mark', {
@@ -671,13 +732,10 @@
         }
         // --- End check if word is known ---
 
-
         // Show dialog for new highlights
         showContextDialog(selection, caption, async () => {
-            console.log(`Marking new word: "${caption}"`);
-
             // Get context (paragraph, URL)
-            const context = await getContextFromNode(selection.focusNode);
+            const context = await getContextFromNode(node);
             if (!context) {
                 console.error("Failed to get context for selection.");
                 // Provide user feedback?
@@ -844,7 +902,7 @@
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 console.log("Tab became visible, re-checking auth and data.");
-                checkAuthentication().then(() => {
+                checkAuthAndFetchSettings().then(() => {
                     if (isAuthenticated) {
                         fetchUserDataAndHighlight(); // Refresh data on becoming visible
                     }

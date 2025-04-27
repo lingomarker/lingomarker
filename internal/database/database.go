@@ -66,13 +66,17 @@ func createSchema(db *sql.DB) error {
         );
         CREATE INDEX IF NOT EXISTS idx_user_sessions_expiry ON user_sessions(expiry);
 
-
-        CREATE TABLE IF NOT EXISTS user_settings (
-            user_id INTEGER PRIMARY KEY,
-            gemini_api_key TEXT,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
+				CREATE TABLE IF NOT EXISTS user_settings (
+						user_id INTEGER PRIMARY KEY,
+						gemini_api_key TEXT,
+						dict_base_url TEXT DEFAULT 'https://slovniky.lingea.sk/anglicko-slovensky/', -- New with default
+						allow_fragment_url_list TEXT DEFAULT 'https://www.nytimes.com/,https://developer.mozilla.org/', -- New, comma-separated default
+						words_number_limit INTEGER DEFAULT 4,  -- New with default
+						words_length_limit INTEGER DEFAULT 50, -- New with default
+						highlight_color TEXT DEFAULT 'rgba(210, 210, 10, 0.4)', -- New with default
+						updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+						FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				);
 
         CREATE TABLE IF NOT EXISTS entries (
             uuid TEXT NOT NULL,
@@ -207,31 +211,92 @@ func (db *DB) DeleteExpiredSessions() (int64, error) {
 // --- Settings Methods ---
 
 func (db *DB) GetUserSettings(userID int64) (*models.UserSettings, error) {
-	settings := &models.UserSettings{UserID: userID}
-	var apiKey sql.NullString
-	err := db.QueryRow("SELECT gemini_api_key FROM user_settings WHERE user_id = ?", userID).Scan(&apiKey)
+	settings := &models.UserSettings{
+		UserID: userID,
+		// Set defaults in case DB fetch returns NULLs unexpectedly (schema defaults should prevent this)
+		DictBaseURL:          "https://slovniky.lingea.sk/anglicko-slovensky/",
+		AllowFragmentURLList: "https://www.nytimes.com/,https://developer.mozilla.org/",
+		WordsNumberLimit:     4,
+		WordsLengthLimit:     50,
+		HighlightColor:       "rgba(210, 210, 10, 0.4)",
+	}
+	var geminiKey sql.NullString
+	var dictUrl sql.NullString
+	var fragmentList sql.NullString
+	var numLimit sql.NullInt64
+	var lenLimit sql.NullInt64
+	var color sql.NullString
+
+	// Select all settings fields
+	query := `SELECT
+							gemini_api_key, dict_base_url, allow_fragment_url_list,
+							words_number_limit, words_length_limit, highlight_color
+						FROM user_settings WHERE user_id = ?`
+
+	err := db.QueryRow(query, userID).Scan(
+		&geminiKey, &dictUrl, &fragmentList, &numLimit, &lenLimit, &color,
+	)
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// No settings found, return default empty struct
+			// No settings row exists for the user yet, return the struct with defaults.
+			// The schema defaults handle DB-level, Go defaults handle missing row.
 			return settings, nil
 		}
-		return nil, err
+		// Other database error
+		return nil, fmt.Errorf("error querying user settings for user %d: %w", userID, err)
 	}
-	if apiKey.Valid {
-		settings.GeminiAPIKey = apiKey.String
+
+	// Populate struct from DB values if they are valid
+	if geminiKey.Valid {
+		settings.GeminiAPIKey = geminiKey.String
 	}
+	if dictUrl.Valid {
+		settings.DictBaseURL = dictUrl.String
+	}
+	if fragmentList.Valid {
+		settings.AllowFragmentURLList = fragmentList.String
+	}
+	if numLimit.Valid {
+		settings.WordsNumberLimit = int(numLimit.Int64) // Convert int64 to int
+	}
+	if lenLimit.Valid {
+		settings.WordsLengthLimit = int(lenLimit.Int64) // Convert int64 to int
+	}
+	if color.Valid {
+		settings.HighlightColor = color.String
+	}
+
 	return settings, nil
 }
 
 func (db *DB) SaveUserSettings(settings *models.UserSettings) error {
-	// Use INSERT OR REPLACE (UPSERT)
-	_, err := db.Exec(`
-            INSERT INTO user_settings (user_id, gemini_api_key, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id) DO UPDATE SET
-                gemini_api_key = excluded.gemini_api_key,
-                updated_at = CURRENT_TIMESTAMP;
-        `, settings.UserID, settings.GeminiAPIKey)
+	// Use INSERT OR REPLACE (UPSERT) to handle both insert and update
+	query := `
+			INSERT INTO user_settings (
+					user_id, gemini_api_key, dict_base_url, allow_fragment_url_list,
+					words_number_limit, words_length_limit, highlight_color, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(user_id) DO UPDATE SET
+					gemini_api_key = excluded.gemini_api_key,
+					dict_base_url = excluded.dict_base_url,
+					allow_fragment_url_list = excluded.allow_fragment_url_list,
+					words_number_limit = excluded.words_number_limit,
+					words_length_limit = excluded.words_length_limit,
+					highlight_color = excluded.highlight_color,
+					updated_at = CURRENT_TIMESTAMP;
+	`
+	_, err := db.Exec(
+		query,
+		settings.UserID,
+		settings.GeminiAPIKey, // Keep saving this field
+		settings.DictBaseURL,
+		settings.AllowFragmentURLList,
+		settings.WordsNumberLimit,
+		settings.WordsLengthLimit,
+		settings.HighlightColor,
+	)
 	return err
 }
 

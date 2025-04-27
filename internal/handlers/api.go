@@ -43,10 +43,9 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 
 // --- API Endpoints ---
 
-// HandleSessionCheck verifies if the current session is valid
+// HandleSessionCheck verifies session and returns user info + settings
 func (h *APIHandlers) HandleSessionCheck(w http.ResponseWriter, r *http.Request) {
-	// AuthMiddleware already validated the session and put userID in context
-	userID := r.Context().Value(UserIDContextKey).(int64) // Should be safe due to middleware
+	userID := r.Context().Value(UserIDContextKey).(int64)
 
 	user, err := h.DB.GetUserByID(userID)
 	if err != nil || user == nil {
@@ -55,11 +54,27 @@ func (h *APIHandlers) HandleSessionCheck(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	settings, err := h.DB.GetUserSettings(userID)
+	if err != nil {
+		log.Printf("API Session Check: Failed to get settings for user %d: %v", userID, err)
+		// Proceed without settings? Or fail? Let's fail for consistency.
+		writeJSONError(w, http.StatusInternalServerError, "Failed to retrieve user settings")
+		return
+	}
+	// Ensure settings is not nil
+	if settings == nil {
+		// This case should be handled by GetUserSettings now, returning defaults
+		log.Printf("API Session Check: Warning - GetUserSettings returned nil for user %d", userID)
+		// Create a default settings object to return
+		settings = &models.UserSettings{ /* Populate with defaults if necessary */ }
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"authenticated": true,
-		"userID":        userID, // Send userID back if needed by frontend
+		"userID":        userID,
 		"username":      user.Username,
 		"name":          user.Name,
+		"settings":      settings, // Embed the user settings object
 	})
 }
 

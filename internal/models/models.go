@@ -10,8 +10,13 @@ type User struct {
 }
 
 type UserSettings struct {
-	UserID       int64  `json:"-"`
-	GeminiAPIKey string `json:"-"` // Sensitive, don't expose directly unless necessary
+	UserID                int64    `json:"-"`
+	GeminiAPIKey          string   `json:"-"` // Keep sensitive info out of JSON where possible
+	DictBaseURL           string   `json:"dictBaseUrl"`           // Expose non-sensitive settings
+	AllowFragmentURLList  string   `json:"allowFragmentUrlList"`  // Keep as string for easier JSON/DB handling
+	WordsNumberLimit      int      `json:"wordsNumberLimit"`
+	WordsLengthLimit      int      `json:"wordsLengthLimit"`
+	HighlightColor        string   `json:"highlightColor"`
 }
 
 // Data structures based on UserScript needs, adapted for SQL

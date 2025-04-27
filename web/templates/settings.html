@@ -1,17 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
 {{ template "head.html" . }}
+
 <body>
-    <h1>Settings Page</h1>
+    <h1>Settings for {{ .User.Username }}</h1>
+
+    {{if .Message}}
+    <p style="color: green;">{{.Message}}</p>
+    {{end}}
     {{if .Error}}
     <p style="color: red;">{{.Error}}</p>
     {{end}}
+
     <form method="POST" action="/settings">
-        <div>
-            <label for="name">Gemini API Key:</label>
-            <input type="text" id="geminiApiKey" name="geminiApiKey" required>
-        </div>
-        <button type="submit">Submit</button>
+        <fieldset>
+            <legend>API Keys</legend>
+            <div>
+                <label for="geminiApiKey">Gemini API Key:</label>
+                <input type="password" id="geminiApiKey" name="geminiApiKey"
+                    placeholder="{{ if .APIKeyIsSet }}********** (set){{ else }}Enter API Key{{ end }}" size="40">
+                <small>Leave blank to keep current key, or enter new key to replace. Enter '-' to clear (or just leave
+                    empty now).</small>
+                <!-- Correction: Simpler instruction - Leave empty to keep current, enter new to replace/set -->
+                <!-- Update Feb 2024: Standard empty string is safer for clearing -->
+                <br><small>Leave blank to keep current key. Enter a new key to update/set. <b>To clear the key, submit
+                        an empty field.</b></small>
+
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Highlighting & Selection</legend>
+            <div>
+                <label for="highlightColor">Highlight Color:</label>
+                <input type="color" id="highlightColor" name="highlightColor" value="{{ .Settings.HighlightColor }}">
+                <input type="text" value="{{ .Settings.HighlightColor }}"
+                    oninput="document.getElementById('highlightColor').value = this.value" size="25">
+                <small>Choose color or enter RGBA/Hex value (e.g., rgba(255, 255, 0, 0.5) or #FFFF00).</small>
+            </div>
+            <div>
+                <label for="wordsNumberLimit">Max Words per Selection:</label>
+                <input type="number" id="wordsNumberLimit" name="wordsNumberLimit"
+                    value="{{ .Settings.WordsNumberLimit }}" min="1" max="19" style="width: 5em;">
+            </div>
+            <div>
+                <label for="wordsLengthLimit">Max Characters per Selection:</label>
+                <input type="number" id="wordsLengthLimit" name="wordsLengthLimit"
+                    value="{{ .Settings.WordsLengthLimit }}" min="6" max="99" style="width: 5em;">
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Dictionary & Context</legend>
+            <div>
+                <label for="dictBaseUrl">Dictionary URL Prefix:</label>
+                <input type="url" id="dictBaseUrl" name="dictBaseUrl" value="{{ .Settings.DictBaseURL }}"
+                    placeholder="e.g., https://www.merriam-webster.com/dictionary/" size="60">
+                <small>The URL used for dictionary lookups. The selected word will be appended.</small>
+            </div>
+            <div>
+                <label for="allowFragmentUrlList">Keep URL Fragments For Sites (comma-separated):</label><br>
+                <textarea id="allowFragmentUrlList" name="allowFragmentUrlList" rows="3" cols="60"
+                    placeholder="e.g., https://developer.mozilla.org/,https://www.example.com/docs/">{{ .Settings.AllowFragmentURLList }}</textarea><br>
+                <small>For these sites, the part after '#' in the URL will be kept when saving context.</small>
+            </div>
+
+        </fieldset>
+
+
+        <button type="submit">Save Settings</button>
     </form>
+
+    <p><a href="/training">Back to Training</a></p>
 </body>
+
 </html>
