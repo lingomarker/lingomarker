@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      0.3
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -532,7 +532,7 @@
         Object.assign(dialog.style, {
             position: 'absolute',
             left: `${rect.left + window.scrollX}px`,
-            top: `${rect.bottom + window.scrollY + 5}px`, // Closer to selection
+            top: `${rect.bottom + window.scrollY + 20}px`, // Further from the selection
             zIndex: 9999999999999,
             background: 'white',
             padding: '5px 10px', // Smaller padding
@@ -870,45 +870,160 @@
         }
     }
 
+    // --- Debounced Selection Handler ---
+    // Create the debounced function *once*
+    const debouncedHandleSelection = _.debounce(async () => {
+        if (!isAuthenticated) return; // Don't process if not logged in
+
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+            // No active selection when the debounce fires, do nothing
+            return;
+        }
+
+        const node = selection.focusNode; // Get the node *when the debounce executes*
+        if (!node) return; // Should generally exist if not collapsed
+
+        const caption = selection.toString().trim().replace(/[.,?!"“”]/g, '');
+        const word = caption.toLowerCase();
+
+        // --- Re-check validation inside debounced function ---
+        if (!word || word.includes('\n')) return; // Ignore multi-line or empty
+        const wordCount = word.split(/\s+/).filter(Boolean).length;
+        if (wordCount === 0 || wordCount > wordsNumberLimit || word.length > wordsLengthLimit) {
+            // Selection became invalid between event and debounce fire
+            return;
+        }
+        // --- End Re-check ---
+
+        // --- Check if clicking inside an existing highlight ---
+        // This check helps differentiate selecting new text vs. interacting with existing highlight
+        const range = selection.getRangeAt(0);
+        const commonAncestor = range.commonAncestorContainer;
+        // Check if the selection itself or its immediate parent is inside a highlight
+        // This handles cases where the selection might span multiple nodes within the highlight
+        let isInsideHighlight = false;
+        if (commonAncestor) {
+            if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) {
+                isInsideHighlight = true;
+            } else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) {
+                isInsideHighlight = true;
+            }
+            // Additional check: if the selection is *exactly* the text of a highlight span
+            if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) {
+                isInsideHighlight = true;
+            }
+        }
+
+        if (isInsideHighlight) {
+            // Likely an accidental selection during/after clicking a highlight.
+            // Clear it and let the highlight's own click handler manage interaction.
+            // console.log("Selection inside highlight ignored by debounced handler.");
+            selection.removeAllRanges();
+            return;
+        }
+        // --- End Check inside highlight ---
+
+
+        // --- Check if the selected word is already known ---
+        const existingEntry = findEntryByWordForm(word);
+        if (existingEntry) {
+            console.log(`Debounced: Word "${caption}" is already known (Base: ${existingEntry.word}). Updating context timestamp.`);
+            const context = await getContextFromNode(node); // Use captured node
+            if (context) {
+                try {
+                    await apiRequest('POST', '/api/mark', {
+                        word: existingEntry.word, entryUUID: existingEntry.uuid,
+                        url: context.url, title: context.title, paragraphText: context.paragraphText,
+                        urlHash: context.urlHash, paragraphHash: context.paragraphHash,
+                    });
+                } catch (error) {
+                    console.error("Failed to update context timestamp (debounced):", error);
+                }
+            }
+            selection.removeAllRanges();
+            return; // Don't show dialog for known words
+        }
+        // --- End check if word is known ---
+
+
+        // --- Handle NEW word selection ---
+        console.log(`Debounced: New selection detected for "${caption}"`);
+        // Show dialog for new highlights
+        showContextDialog(selection, caption, async () => {
+            // Callback executed when user clicks the dialog
+            console.log(`Marking new word from dialog: "${caption}"`);
+            const context = await getContextFromNode(node); // Use node captured when dialog was created
+            if (!context) {
+                console.error("Failed to get context for selection (dialog callback).");
+                alert("LingoMarker: Could not determine the context (paragraph/URL) for the selected word.");
+                return;
+            }
+
+            try {
+                const newEntry = await apiRequest('POST', '/api/mark', {
+                    word: word, // Use word captured when dialog was created
+                    url: context.url, title: context.title, paragraphText: context.paragraphText,
+                    urlHash: context.urlHash, paragraphHash: context.paragraphHash,
+                });
+                console.log("Word marked successfully. Backend Entry:", newEntry);
+
+                // Add to local cache immediately...
+                if (newEntry && newEntry.uuid) {
+                    // (Cache update logic as before)
+                    const existingIndex = userData.entries.findIndex(e => e.uuid === newEntry.uuid);
+                    if (existingIndex > -1) { userData.entries[existingIndex] = { ...userData.entries[existingIndex], ...newEntry }; }
+                    else { userData.entries.push(newEntry); }
+                    if (!userData.urls.some(u => u.urlHash === context.urlHash)) { userData.urls.push({ urlHash: context.urlHash, url: context.url, title: context.title, createdAt: new Date().toISOString() }); }
+                    if (!userData.paragraphs.some(p => p.paragraphHash === context.paragraphHash)) { userData.paragraphs.push({ paragraphHash: context.paragraphHash, text: context.paragraphText, createdAt: new Date().toISOString() }); }
+                    const relIndex = userData.relations.findIndex(r => r.entryUUID === newEntry.uuid && r.urlHash === context.urlHash && r.paragraphHash === context.paragraphHash);
+                    const now = new Date().toISOString();
+                    if (relIndex > -1) { userData.relations[relIndex].updatedAt = now; }
+                    else { userData.relations.push({ entryUUID: newEntry.uuid, urlHash: context.urlHash, paragraphHash: context.paragraphHash, createdAt: now, updatedAt: now }); }
+
+                    safeApplyHighlights(); // Re-apply highlights
+                } else {
+                    await fetchUserDataAndHighlight(); // Fallback refresh
+                }
+
+            } catch (error) {
+                // (Error handling as before)
+                console.error("Failed to mark word via API (dialog callback):", error);
+                let errorMsg = "LingoMarker: Failed to save the word.";
+                if (error.message?.includes("API key not configured")) { errorMsg += " Please set your Gemini API key in the LingoMarker settings."; }
+                else if (error.message?.includes("Failed to retrieve word forms")) { errorMsg += " Could not get word forms from the API."; }
+                else if (error.message?.includes("Unauthorized")) { errorMsg = "LingoMarker: Authentication error. Please log in again."; }
+                alert(errorMsg);
+            } finally {
+                // Clear selection *after* dialog callback finishes
+                if (window.getSelection) { window.getSelection().removeAllRanges(); }
+            }
+        }); // End of showContextDialog callback
+
+    }, 500); // Debounce time in milliseconds (adjust 300-500ms as needed)
+
     // --- Event Listeners ---
 
     function setupEventListeners() {
-        // Use mouseup for selection end detection - often more reliable than selectionchange
-        document.addEventListener('mouseup', () => {
-            // Use setTimeout to allow selectionchange to possibly fire first
-            // and to ensure the selection object is stable.
-            setTimeout(() => {
-                const selection = window.getSelection();
-                if (selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.toString().trim() !== '') {
-                    // Check if click was inside a highlight - handled by handleHighlightClick now
-                    const range = selection.getRangeAt(0);
-                    const commonAncestor = range.commonAncestorContainer;
-                    const isInsideHighlight = commonAncestor.parentElement?.closest('.lingomarker-highlight') || commonAncestor.classList?.contains('lingomarker-highlight');
+        document.addEventListener('selectionchange', debouncedHandleSelection);
 
-                    if (!isInsideHighlight) {
-                        // It's a new selection, not just a click on existing highlight
-                        handleSelection();
-                    } else {
-                        // Click inside existing highlight - selection might be browser artifact, clear it.
-                        selection.removeAllRanges();
-                    }
-                }
-            }, 50); // Small delay
-        });
-
-        // Handle clicks outside context dialog (already handled in showContextDialog)
-
-        // Listen for visibility changes to re-check auth/refresh data
+        // Keep visibility change listener
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 console.log("Tab became visible, re-checking auth and data.");
-                checkAuthAndFetchSettings().then(() => {
+                checkAuthAndFetchSettings().then(() => { // Use the updated function name
                     if (isAuthenticated) {
-                        fetchUserDataAndHighlight(); // Refresh data on becoming visible
+                        fetchUserDataAndHighlight();
+                    } else {
+                        // Optional: Clear highlights if user logged out in another tab?
+                        safeApplyHighlights(); // This will clear highlights if isAuthenticated is false
                     }
                 });
             }
         });
+
+        // Clicks on existing highlights are handled by the listener added in safeApplyHighlights/each
+        // Clicks outside the dialog are handled by the listener added in showContextDialog
     }
 
 
