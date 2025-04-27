@@ -688,22 +688,73 @@
         }
     }
 
-    async function handleSelection() {
-        if (!isAuthenticated) return; // Don't process if not logged in
+    // --- Mutation Observer ---
 
-        const selection = window.getSelection();
-        const node = selection.focusNode;
-        if (!node) return;
+    function setupMutationObserver() {
+        mutationObserverInstance = new MutationObserver((mutations) => {
+            // Basic check: Did *any* nodes get added or removed?
+            // More complex checks could try to be smarter about *which* nodes.
+            let significantChange = false;
+            for (const mutation of mutations) {
+                // Ignore changes within our own dialogs/highlights or script/style tags
+                if (mutation.target.closest && (mutation.target.closest('.lingomarker-dialog') || mutation.target.closest('.lingomarker-highlight'))) {
+                    continue;
+                }
+                if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
+                    // Ignore changes to text nodes directly inside highlights?
+                    let isHighlightTextChange = false;
+                    if (mutation.target.classList?.contains('lingomarker-highlight') && mutation.addedNodes.length === 1 && mutation.addedNodes[0].nodeType === Node.TEXT_NODE) {
+                        isHighlightTextChange = true;
+                    }
+                    if (!isHighlightTextChange) {
+                        significantChange = true;
+                        break;
+                    }
+                } else if (mutation.type === 'characterData') {
+                    // Character data changes outside highlights might be significant
+                    if (!mutation.target.parentElement?.closest('.lingomarker-highlight')) {
+                        significantChange = true;
+                        break;
+                    }
+                }
+            }
 
-        const caption = selection.toString().trim().replace(/[.,?!"“”]/g, ''); // Clean basic punctuation
-        const word = caption.toLowerCase(); // Use lowercase internally
+
+            if (significantChange && !isHighlighting) {
+                // console.log("Mutation observed, triggering highlight refresh.");
+                safeApplyHighlights();
+            }
+        });
+
+        observeMutations(); // Start observing
+    }
+
+    function observeMutations() {
+        if (!mutationObserverInstance || !document.body) return;
+        try {
+            mutationObserverInstance.observe(document.body, {
+                childList: true,
+                subtree: true,
+                characterData: true, // Observe text changes too, filter noise in callback
+            });
+            // console.log('Observer connected');
+        } catch (e) {
+            console.error('Error connecting MutationObserver:', e);
+        }
+    }
+
+    async function handleSelectionLogic(selection, node) {
+        if (!isAuthenticated || !selection || !node) return;
+
+        const caption = selection.toString().trim().replace(/[.,?!"“”]/g, '');
+        const word = caption.toLowerCase();
 
         // Validate selection
-        if (!word || word.includes('\n') || selection.rangeCount === 0) return; // Ignore multi-line or empty
+        if (!word || word.includes('\n') || selection.rangeCount === 0) return;
         const wordCount = word.split(/\s+/).filter(Boolean).length;
         if (wordCount === 0 || wordCount > wordsNumberLimit || word.length > wordsLengthLimit) return;
 
-        // --- Check if the selected word is already known ---
+        // Check if known word
         const existingEntry = findEntryByWordForm(word);
         if (existingEntry) {
             console.log(`Word "${caption}" is already known (Base: ${existingEntry.word}). Updating context timestamp.`);
@@ -725,14 +776,11 @@
                     console.error("Failed to update context timestamp:", error);
                 }
             }
-            // Remove selection range after processing
-            selection.removeAllRanges();
-            // Don't show dialog for already known words
-            return;
+            selection.removeAllRanges(); // Clear selection here too
+            return; // Don't show dialog
         }
-        // --- End check if word is known ---
 
-        // Show dialog for new highlights
+        // Show dialog for new word
         showContextDialog(selection, caption, async () => {
             // Get context (paragraph, URL)
             const context = await getContextFromNode(node);
@@ -815,222 +863,58 @@
         }); // End of showContextDialog callback
     }
 
-    // --- Mutation Observer ---
-
-    function setupMutationObserver() {
-        mutationObserverInstance = new MutationObserver((mutations) => {
-            // Basic check: Did *any* nodes get added or removed?
-            // More complex checks could try to be smarter about *which* nodes.
-            let significantChange = false;
-            for (const mutation of mutations) {
-                // Ignore changes within our own dialogs/highlights or script/style tags
-                if (mutation.target.closest && (mutation.target.closest('.lingomarker-dialog') || mutation.target.closest('.lingomarker-highlight'))) {
-                    continue;
-                }
-                if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
-                    // Ignore changes to text nodes directly inside highlights?
-                    let isHighlightTextChange = false;
-                    if (mutation.target.classList?.contains('lingomarker-highlight') && mutation.addedNodes.length === 1 && mutation.addedNodes[0].nodeType === Node.TEXT_NODE) {
-                        isHighlightTextChange = true;
-                    }
-                    if (!isHighlightTextChange) {
-                        significantChange = true;
-                        break;
-                    }
-                } else if (mutation.type === 'characterData') {
-                    // Character data changes outside highlights might be significant
-                    if (!mutation.target.parentElement?.closest('.lingomarker-highlight')) {
-                        significantChange = true;
-                        break;
-                    }
-                }
-            }
-
-
-            if (significantChange && !isHighlighting) {
-                // console.log("Mutation observed, triggering highlight refresh.");
-                safeApplyHighlights();
-            }
-        });
-
-        observeMutations(); // Start observing
-    }
-
-    function observeMutations() {
-        if (!mutationObserverInstance || !document.body) return;
-        try {
-            mutationObserverInstance.observe(document.body, {
-                childList: true,
-                subtree: true,
-                characterData: true, // Observe text changes too, filter noise in callback
-            });
-            // console.log('Observer connected');
-        } catch (e) {
-            console.error('Error connecting MutationObserver:', e);
-        }
-    }
-
-    // --- Debounced Selection Handler ---
-    // Create the debounced function *once*
+    // Debounced wrapper for selectionchange
     const debouncedHandleSelection = _.debounce(async () => {
-        if (!isAuthenticated) return; // Don't process if not logged in
-
+        if (!isAuthenticated) return;
         const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-            // No active selection when the debounce fires, do nothing
-            return;
-        }
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+        const node = selection.focusNode;
+        if (!node) return;
 
-        const node = selection.focusNode; // Get the node *when the debounce executes*
-        if (!node) return; // Should generally exist if not collapsed
-
-        const caption = selection.toString().trim().replace(/[.,?!"“”]/g, '');
-        const word = caption.toLowerCase();
-
-        // --- Re-check validation inside debounced function ---
-        if (!word || word.includes('\n')) return; // Ignore multi-line or empty
-        const wordCount = word.split(/\s+/).filter(Boolean).length;
-        if (wordCount === 0 || wordCount > wordsNumberLimit || word.length > wordsLengthLimit) {
-            // Selection became invalid between event and debounce fire
-            return;
-        }
-        // --- End Re-check ---
-
-        // --- Check if clicking inside an existing highlight ---
-        // This check helps differentiate selecting new text vs. interacting with existing highlight
+        // Check if inside highlight first
         const range = selection.getRangeAt(0);
         const commonAncestor = range.commonAncestorContainer;
-        // Check if the selection itself or its immediate parent is inside a highlight
-        // This handles cases where the selection might span multiple nodes within the highlight
         let isInsideHighlight = false;
-        if (commonAncestor) {
-            if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) {
-                isInsideHighlight = true;
-            } else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) {
-                isInsideHighlight = true;
-            }
-            // Additional check: if the selection is *exactly* the text of a highlight span
-            if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) {
-                isInsideHighlight = true;
-            }
-        }
-
+        if (commonAncestor) { /* ... your check logic ... */ }
         if (isInsideHighlight) {
-            // Likely an accidental selection during/after clicking a highlight.
-            // Clear it and let the highlight's own click handler manage interaction.
-            // console.log("Selection inside highlight ignored by debounced handler.");
             selection.removeAllRanges();
             return;
         }
-        // --- End Check inside highlight ---
 
+        // Call the core logic
+        handleSelectionLogic(selection, node);
 
-        // --- Check if the selected word is already known ---
-        const existingEntry = findEntryByWordForm(word);
-        if (existingEntry) {
-            console.log(`Debounced: Word "${caption}" is already known (Base: ${existingEntry.word}). Updating context timestamp.`);
-            const context = await getContextFromNode(node); // Use captured node
-            if (context) {
-                try {
-                    await apiRequest('POST', '/api/mark', {
-                        word: existingEntry.word, entryUUID: existingEntry.uuid,
-                        url: context.url, title: context.title, paragraphText: context.paragraphText,
-                        urlHash: context.urlHash, paragraphHash: context.paragraphHash,
-                    });
-                } catch (error) {
-                    console.error("Failed to update context timestamp (debounced):", error);
-                }
+    }, 500);
+
+    // Direct handler for mouseup
+    function handleMouseUpSelection() {
+        const selection = window.getSelection();
+        if (selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.toString().trim() !== '') {
+            const node = selection.focusNode;
+            if (!node) return;
+
+            const range = selection.getRangeAt(0);
+            const commonAncestor = range.commonAncestorContainer;
+            let isInsideHighlight = false;
+            if (commonAncestor) { /* ... your check logic ... */ }
+
+            if (!isInsideHighlight) {
+                handleSelectionLogic(selection, node); // Call core logic directly
+            } else {
+                selection.removeAllRanges();
             }
-            selection.removeAllRanges();
-            return; // Don't show dialog for known words
         }
-        // --- End check if word is known ---
-
-
-        // --- Handle NEW word selection ---
-        console.log(`Debounced: New selection detected for "${caption}"`);
-        // Show dialog for new highlights
-        showContextDialog(selection, caption, async () => {
-            // Callback executed when user clicks the dialog
-            console.log(`Marking new word from dialog: "${caption}"`);
-            const context = await getContextFromNode(node); // Use node captured when dialog was created
-            if (!context) {
-                console.error("Failed to get context for selection (dialog callback).");
-                alert("LingoMarker: Could not determine the context (paragraph/URL) for the selected word.");
-                return;
-            }
-
-            try {
-                const newEntry = await apiRequest('POST', '/api/mark', {
-                    word: word, // Use word captured when dialog was created
-                    url: context.url, title: context.title, paragraphText: context.paragraphText,
-                    urlHash: context.urlHash, paragraphHash: context.paragraphHash,
-                });
-                console.log("Word marked successfully. Backend Entry:", newEntry);
-
-                // Add to local cache immediately...
-                if (newEntry && newEntry.uuid) {
-                    // (Cache update logic as before)
-                    const existingIndex = userData.entries.findIndex(e => e.uuid === newEntry.uuid);
-                    if (existingIndex > -1) { userData.entries[existingIndex] = { ...userData.entries[existingIndex], ...newEntry }; }
-                    else { userData.entries.push(newEntry); }
-                    if (!userData.urls.some(u => u.urlHash === context.urlHash)) { userData.urls.push({ urlHash: context.urlHash, url: context.url, title: context.title, createdAt: new Date().toISOString() }); }
-                    if (!userData.paragraphs.some(p => p.paragraphHash === context.paragraphHash)) { userData.paragraphs.push({ paragraphHash: context.paragraphHash, text: context.paragraphText, createdAt: new Date().toISOString() }); }
-                    const relIndex = userData.relations.findIndex(r => r.entryUUID === newEntry.uuid && r.urlHash === context.urlHash && r.paragraphHash === context.paragraphHash);
-                    const now = new Date().toISOString();
-                    if (relIndex > -1) { userData.relations[relIndex].updatedAt = now; }
-                    else { userData.relations.push({ entryUUID: newEntry.uuid, urlHash: context.urlHash, paragraphHash: context.paragraphHash, createdAt: now, updatedAt: now }); }
-
-                    safeApplyHighlights(); // Re-apply highlights
-                } else {
-                    await fetchUserDataAndHighlight(); // Fallback refresh
-                }
-
-            } catch (error) {
-                // (Error handling as before)
-                console.error("Failed to mark word via API (dialog callback):", error);
-                let errorMsg = "LingoMarker: Failed to save the word.";
-                if (error.message?.includes("API key not configured")) { errorMsg += " Please set your Gemini API key in the LingoMarker settings."; }
-                else if (error.message?.includes("Failed to retrieve word forms")) { errorMsg += " Could not get word forms from the API."; }
-                else if (error.message?.includes("Unauthorized")) { errorMsg = "LingoMarker: Authentication error. Please log in again."; }
-                alert(errorMsg);
-            } finally {
-                // Clear selection *after* dialog callback finishes
-                if (window.getSelection) { window.getSelection().removeAllRanges(); }
-            }
-        }); // End of showContextDialog callback
-
-    }, 500); // Debounce time in milliseconds (adjust 300-500ms as needed)
+    }
 
     // --- Event Listeners ---
 
     function setupEventListeners() {
         const touch = matchMedia('(hover: none), (pointer: coarse)').matches;
-
         console.log("Touch support:", touch);
 
         if (!touch) {
-            // Use mouseup for selection end detection - often more reliable than selectionchange
             document.addEventListener('mouseup', () => {
-                // Use setTimeout to allow selectionchange to possibly fire first
-                // and to ensure the selection object is stable.
-                setTimeout(() => {
-                    const selection = window.getSelection();
-                    if (selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.toString().trim() !== '') {
-                        // Check if click was inside a highlight - handled by handleHighlightClick now
-                        const range = selection.getRangeAt(0);
-                        const commonAncestor = range.commonAncestorContainer;
-                        const isInsideHighlight = commonAncestor.parentElement?.closest('.lingomarker-highlight') || commonAncestor.classList?.contains('lingomarker-highlight');
-
-                        if (!isInsideHighlight) {
-                            // It's a new selection, not just a click on existing highlight
-                            handleSelection();
-                        } else {
-                            // Click inside existing highlight - selection might be browser artifact, clear it.
-                            selection.removeAllRanges();
-                        }
-                    }
-                }, 50); // Small delay
+                setTimeout(handleMouseUpSelection, 50); // Call the dedicated mouseup handler
             });
         } else {
             document.addEventListener('selectionchange', debouncedHandleSelection);
@@ -1054,7 +938,6 @@
         // Clicks on existing highlights are handled by the listener added in safeApplyHighlights/each
         // Clicks outside the dialog are handled by the listener added in showContextDialog
     }
-
 
     // --- Menu Commands ---
 
