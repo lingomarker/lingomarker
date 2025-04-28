@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.5
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -65,6 +65,9 @@
     let dictBaseUrl = 'https://slovniky.lingea.sk/anglicko-slovensky/'; // Default dictionary URL
     let allowFragmentUrlList = ['https://www.nytimes.com/', 'https://developer.mozilla.org/']; // Default list
 
+    let isDialogActive = false; // Flag to track if dialog is currently shown
+    let lastSelectionText = null; // Store text of the last selection that opened a dialog
+
     // --- Initialization ---
 
     async function initialize() {
@@ -90,7 +93,6 @@
         // 2. Apply Styles (needs update for dynamic color)
         applyStyles(); // Call applyStyles AFTER settings are fetched
 
-        // ... (rest of initialize function: init Mark.js, fetch data, setup listeners) ...
         // 3. Initialize Mark.js
         if (document.body.textContent.length > PAGE_SIZE_LIMIT) {
             console.warn('Page too large for highlighting');
@@ -484,7 +486,6 @@
             window.open(createDictionaryLink(entry.word), 'Lingea'); // Use base word
             // GM_openInTab(createDictionaryLink(entry.word), { active: false, setParent: true }); // Open in background
 
-
             // --- Alternative: Show a small info popup instead of opening dictionary ---
             // showInfoPopup(event, entry, context);
 
@@ -513,17 +514,15 @@
 
     // --- Selection Handling ---
 
+    // --- Dialog Functions ---
     function showContextDialog(selection, caption, callback) {
-        lastTrigger = Date.now(); // Update last trigger time
+        lastTrigger = Date.now();
 
-        // Remove any existing dialogs immediately
         const existingDialogs = document.querySelectorAll('.lingomarker-dialog');
         existingDialogs.forEach(d => d.remove());
 
-
-        // Create dialog element
         const dialog = document.createElement('div');
-        dialog.className = 'lingomarker-dialog notranslate'; // Add notranslate class
+        dialog.className = 'lingomarker-dialog notranslate';
 
         // Position dialog near selection
         const range = selection.getRangeAt(0).cloneRange();
@@ -547,49 +546,67 @@
             // border: '1px solid rgb(74, 63, 36)',
         });
 
-        dialog.textContent = `Mark "${caption}"`; // Simple text
-
-
-        // Add click handler to the dialog itself
+        dialog.textContent = `Mark "${caption}"`;
+        // --- Dialog Click (Confirmation) ---
         dialog.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            closeDialog(dialog); // Use closeDialog function
-            if (callback) callback();
+            // Don't reset isDialogActive here, let the callback handle it
+            // Don't clear selection here, let the callback handle it
+            closeDialog(dialog); // Just close the visual element
+            if (callback) callback(); // Execute the marking logic
         });
 
-
-        // --- Disconnect observer before adding dialog ---
-        if (mutationObserverInstance) {
-            mutationObserverInstance.disconnect();
-        }
-
+        if (mutationObserverInstance) mutationObserverInstance.disconnect();
         document.body.appendChild(dialog);
 
+        // --- Auto-close Timeout ---
+        const timeoutId = setTimeout(() => {
+            console.log("Dialog timed out.");
+            closeDialog(dialog);
+            // Reset flag and clear selection on timeout
+            isDialogActive = false;
+            lastSelectionText = null;
+            if (window.getSelection) window.getSelection().removeAllRanges();
+        }, 3000); // Timeout remains 3 seconds
 
-        //  Auto-close after 3 seconds
-        setTimeout(() => closeDialog(dialog), 3000);
+        // --- Close on Outside Click ---
+        // Store timeoutId with the listener to clear it if closed manually
+        const outsideClickListener = (event) => {
+            const dialogElement = document.querySelector('.lingomarker-dialog'); // Find *the* dialog
+            if (dialogElement && !dialogElement.contains(event.target)) {
+                console.log("Clicked outside dialog.");
+                clearTimeout(timeoutId); // Cancel the auto-close timer
+                closeDialog(dialogElement);
+                // Reset flag and clear selection on outside click
+                isDialogActive = false;
+                lastSelectionText = null;
+                if (window.getSelection) window.getSelection().removeAllRanges();
+                document.removeEventListener('click', outsideClickListener, true); // Clean up self
+            }
+        };
 
-        /// ??? Close on outside click (add after a short delay to prevent immediate close)
+        // Use setTimeout to avoid capturing the click that might have opened the dialog
         setTimeout(() => {
-            document.addEventListener('click', closeDialogOnClickOutside, true);
+            document.addEventListener('click', outsideClickListener, true);
         }, 50);
 
-        // --- Reconnect observer ---
-        observeMutations(); // Reconnect after adding dialog and setting up listener
+        // Store listener reference to remove it if dialog is actioned otherwise
+        dialog.dataset.outsideClickListener = outsideClickListener.toString(); // Hacky way, better to manage listeners centrally if complex
 
+        observeMutations(); // Reconnect observer
         return dialog;
     }
 
+    // Updated closeDialog to ensure listener cleanup if possible (though maybe handled by the listener itself now)
     function closeDialog(dialog) {
-        if (dialog && dialog.parentNode) { // Check if dialog exists and is in DOM
+        if (dialog && dialog.parentNode) {
+            // Attempt to remove the specific outside click listener if needed, though it should remove itself.
+            // const listenerFunc = dialog.dataset.outsideClickListener; // Needs proper parsing if used
+            // if (listenerFunc) document.removeEventListener('click', ??? , true);
             dialog.remove();
-            // Clean up the outside click listener if it was added for this dialog instance
-            // This might be tricky if multiple dialogs could exist briefly.
-            // A safer approach might be to associate the listener directly with the dialog
-            // or have the listener check if ANY dialogs remain before removing itself.
-            document.removeEventListener('click', closeDialogOnClickOutside, true); // Try removing the general listener
         }
+        // Don't reset isDialogActive or clear selection here - handled by callers (timeout, outside click, confirm callback)
     }
 
     function closeDialogOnClickOutside(event) {
@@ -633,7 +650,6 @@
             }
             current = current.parentNode;
         }
-
 
         // Fallback to window location
         let url = window.location.href;
@@ -719,7 +735,6 @@
                 }
             }
 
-
             if (significantChange && !isHighlighting) {
                 // console.log("Mutation observed, triggering highlight refresh.");
                 safeApplyHighlights();
@@ -743,8 +758,14 @@
         }
     }
 
+    // --- Core Selection Logic ---
     async function handleSelectionLogic(selection, node) {
         if (!isAuthenticated || !selection || !node) return;
+        if (isDialogActive) { // Don't process if a dialog is already active
+            // console.log("Dialog already active, skipping selection logic.");
+            return;
+        }
+
 
         const caption = selection.toString().trim().replace(/[.,?!"“”]/g, '');
         const word = caption.toLowerCase();
@@ -757,8 +778,7 @@
         // Check if known word
         const existingEntry = findEntryByWordForm(word);
         if (existingEntry) {
-            console.log(`Word "${caption}" is already known (Base: ${existingEntry.word}). Updating context timestamp.`);
-            // Update timestamp by re-sending mark request
+            console.log(`Known word "${caption}" selected. Updating timestamp.`);
             const context = await getContextFromNode(node);
             if (context) {
                 try {
@@ -776,20 +796,28 @@
                     console.error("Failed to update context timestamp:", error);
                 }
             }
-            selection.removeAllRanges(); // Clear selection here too
+            // Reliably clear selection for known words too
+            if (window.getSelection) window.getSelection().removeAllRanges();
             return; // Don't show dialog
         }
 
-        // Show dialog for new word
+        // --- Show dialog for NEW word ---
+        // Set flag *before* showing dialog
+        isDialogActive = true;
+        lastSelectionText = selection.toString(); // Store text associated with this dialog instance
+
         showContextDialog(selection, caption, async () => {
-            // Get context (paragraph, URL)
+            // --- Dialog Callback (Word Marked) ---
+            console.log(`Marking new word from dialog: "${caption}"`);
+            // Context fetching and API call logic...
             const context = await getContextFromNode(node);
             if (!context) {
                 console.error("Failed to get context for selection.");
                 // Provide user feedback?
                 alert("LingoMarker: Could not determine the context (paragraph/URL) for the selected word.");
+                isDialogActive = false;
                 return;
-            }
+            } // Reset flag on error
 
             try {
                 // Call backend API to mark the word
@@ -801,10 +829,8 @@
                     paragraphText: context.paragraphText,
                     urlHash: context.urlHash,
                     paragraphHash: context.paragraphHash,
-                });
+                }); console.log("Word marked successfully.", newEntry);
 
-                // --- Success ---
-                console.log("Word marked successfully. Backend Entry:", newEntry);
 
                 // Add the new entry data to the local cache immediately for faster highlight update
                 if (newEntry && newEntry.uuid) {
@@ -840,42 +866,61 @@
                     // If backend didn't return a valid entry, fetch all data again
                     await fetchUserDataAndHighlight();
                 }
-
-
             } catch (error) {
-                console.error("Failed to mark word via API:", error);
-                // Show specific error message if possible
+                // Error handling...
+                console.error("Failed to mark word via API (dialog callback):", error);
                 let errorMsg = "LingoMarker: Failed to save the word.";
-                if (error.message?.includes("API key not configured")) {
-                    errorMsg += " Please set your Gemini API key in the LingoMarker settings.";
-                } else if (error.message?.includes("Failed to retrieve word forms")) {
-                    errorMsg += " Could not get word forms from the API.";
-                } else if (error.message?.includes("Unauthorized")) {
-                    errorMsg = "LingoMarker: Authentication error. Please log in again.";
-                }
+                if (error.message?.includes("API key not configured")) { errorMsg += " Please set your Gemini API key in the LingoMarker settings."; }
+                else if (error.message?.includes("Failed to retrieve word forms")) { errorMsg += " Could not get word forms from the API."; }
+                else if (error.message?.includes("Unauthorized")) { errorMsg = "LingoMarker: Authentication error. Please log in again."; }
                 alert(errorMsg);
             } finally {
-                // Clear selection regardless of success/failure after dialog action
-                if (window.getSelection) {
-                    window.getSelection().removeAllRanges();
-                }
+                // Reset flag and clear selection *after* callback finishes
+                isDialogActive = false;
+                lastSelectionText = null;
+                if (window.getSelection) window.getSelection().removeAllRanges();
             }
-        }); // End of showContextDialog callback
+            // --- End Dialog Callback ---
+        });
     }
 
     // Debounced wrapper for selectionchange
+    // --- Debounced Handler ---
     const debouncedHandleSelection = _.debounce(async () => {
-        if (!isAuthenticated) return;
+        if (!isAuthenticated || isDialogActive) { // Check isDialogActive flag here
+            // If a dialog is already up, don't process subsequent selectionchange events
+            return;
+        }
+
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+
+        // Check if the selection text is the same as the one that *just* had a dialog
+        if (lastSelectionText && selection.toString() === lastSelectionText) {
+            // console.log("Selection matches last dialog text, likely noise, skipping.");
+            // Reset lastSelectionText here ONLY if we are sure it's noise? Or wait? Let's wait.
+            return;
+        }
+
         const node = selection.focusNode;
         if (!node) return;
 
-        // Check if inside highlight first
+        // Check if inside highlight
         const range = selection.getRangeAt(0);
         const commonAncestor = range.commonAncestorContainer;
         let isInsideHighlight = false;
-        if (commonAncestor) { /* ... your check logic ... */ }
+        if (commonAncestor) {
+            if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) {
+                isInsideHighlight = true;
+            } else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) {
+                isInsideHighlight = true;
+            }
+            // Additional check: if the selection is *exactly* the text of a highlight span
+            if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) {
+                isInsideHighlight = true;
+            }
+        }
+
         if (isInsideHighlight) {
             selection.removeAllRanges();
             return;
@@ -884,7 +929,7 @@
         // Call the core logic
         handleSelectionLogic(selection, node);
 
-    }, 500);
+    }, 500); // Keep debounce time
 
     // Direct handler for mouseup
     function handleMouseUpSelection() {
@@ -896,7 +941,17 @@
             const range = selection.getRangeAt(0);
             const commonAncestor = range.commonAncestorContainer;
             let isInsideHighlight = false;
-            if (commonAncestor) { /* ... your check logic ... */ }
+            if (commonAncestor) {
+                if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) {
+                    isInsideHighlight = true;
+                } else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) {
+                    isInsideHighlight = true;
+                }
+                // Additional check: if the selection is *exactly* the text of a highlight span
+                if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) {
+                    isInsideHighlight = true;
+                }
+            }
 
             if (!isInsideHighlight) {
                 handleSelectionLogic(selection, node); // Call core logic directly
