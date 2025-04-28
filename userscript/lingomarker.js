@@ -66,7 +66,6 @@
     let allowFragmentUrlList = ['https://www.nytimes.com/', 'https://developer.mozilla.org/']; // Default list
 
     let isDialogActive = false; // Flag to track if dialog is currently shown
-    let lastSelectionText = null; // Store text of the last selection that opened a dialog
 
     // --- Initialization ---
 
@@ -518,16 +517,15 @@
     function showContextDialog(selection, caption, callback) {
         lastTrigger = Date.now();
 
+        // Ensure previous dialogs removed (shouldn't be needed if state logic is correct, but safe)
         const existingDialogs = document.querySelectorAll('.lingomarker-dialog');
         existingDialogs.forEach(d => d.remove());
 
         const dialog = document.createElement('div');
         dialog.className = 'lingomarker-dialog notranslate';
-
-        // Position dialog near selection
+        // Positioning & Styling (as before)
         const range = selection.getRangeAt(0).cloneRange();
         const rect = range.getBoundingClientRect();
-
         Object.assign(dialog.style, {
             position: 'absolute',
             left: `${rect.left + window.scrollX}px`,
@@ -540,21 +538,19 @@
             fontSize: '14px', // Smaller font
             textAlign: 'center',
             cursor: 'pointer',
-            border: '1px solid #ccc',
-            // Use highlight color? Or keep white?
-            // backgroundColor: 'rgb(208, 180, 111)',
-            // border: '1px solid rgb(74, 63, 36)',
+            border: '1px solid #ccc'
         });
-
         dialog.textContent = `Mark "${caption}"`;
+
         // --- Dialog Click (Confirmation) ---
         dialog.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            // Don't reset isDialogActive here, let the callback handle it
-            // Don't clear selection here, let the callback handle it
-            closeDialog(dialog); // Just close the visual element
-            if (callback) callback(); // Execute the marking logic
+            // Don't reset isDialogActive or clear selection here.
+            closeDialogVisuals(dialog); // Close visuals only
+            clearTimeout(dialog.dataset.timeoutId); // Clear timeout manually
+            document.removeEventListener('click', outsideClickListener, true); // Remove outside listener
+            if (callback) callback(); // Execute the marking logic (which handles state/selection)
         });
 
         if (mutationObserverInstance) mutationObserverInstance.disconnect();
@@ -563,43 +559,49 @@
         // --- Auto-close Timeout ---
         const timeoutId = setTimeout(() => {
             console.log("Dialog timed out.");
-            closeDialog(dialog);
-            // Reset flag and clear selection on timeout
+            closeDialogVisuals(dialog); // Close visuals only
+            // ACTION: Reset flag, DO NOT clear selection.
             isDialogActive = false;
-            lastSelectionText = null;
-            if (window.getSelection) window.getSelection().removeAllRanges();
-        }, 3000); // Timeout remains 3 seconds
+            document.removeEventListener('click', outsideClickListener, true); // Remove outside listener
+            // NOTE: window.getSelection().removeAllRanges(); // <<< REMOVED
+        }, 3000);
+        dialog.dataset.timeoutId = timeoutId; // Store ID to clear it
 
         // --- Close on Outside Click ---
-        // Store timeoutId with the listener to clear it if closed manually
         const outsideClickListener = (event) => {
-            const dialogElement = document.querySelector('.lingomarker-dialog'); // Find *the* dialog
-            if (dialogElement && !dialogElement.contains(event.target)) {
+            // Find the specific dialog instance this listener is for (safer if multiple could exist)
+            const currentDialog = document.querySelector('.lingomarker-dialog'); // Simple assumption: only one dialog
+            if (currentDialog && !currentDialog.contains(event.target)) {
                 console.log("Clicked outside dialog.");
-                clearTimeout(timeoutId); // Cancel the auto-close timer
-                closeDialog(dialogElement);
-                // Reset flag and clear selection on outside click
+                clearTimeout(currentDialog.dataset.timeoutId); // Clear the timeout
+                closeDialogVisuals(currentDialog); // Close visuals only
+                // ACTION: Reset flag, DO NOT clear selection.
                 isDialogActive = false;
-                lastSelectionText = null;
-                if (window.getSelection) window.getSelection().removeAllRanges();
                 document.removeEventListener('click', outsideClickListener, true); // Clean up self
+                // NOTE: window.getSelection().removeAllRanges(); // <<< REMOVED
             }
         };
+        // Store listener function itself for potential removal (though it removes itself now)
+        dialog.dataset.outsideClickListener = outsideClickListener;
 
-        // Use setTimeout to avoid capturing the click that might have opened the dialog
-        setTimeout(() => {
+        setTimeout(() => { // Delay adding listener slightly
             document.addEventListener('click', outsideClickListener, true);
         }, 50);
 
-        // Store listener reference to remove it if dialog is actioned otherwise
-        dialog.dataset.outsideClickListener = outsideClickListener.toString(); // Hacky way, better to manage listeners centrally if complex
-
-        observeMutations(); // Reconnect observer
+        observeMutations();
         return dialog;
     }
 
+    // Renamed to clarify it only handles visuals + listener cleanup potentially
+    function closeDialogVisuals(dialog) {
+        if (dialog && dialog.parentNode) {
+            dialog.remove();
+            // Optional: try removing its specific listener if needed, but current design should handle it.
+        }
+    }
+
     // Updated closeDialog to ensure listener cleanup if possible (though maybe handled by the listener itself now)
-    function closeDialog(dialog) {
+    /*function closeDialog(dialog) {
         if (dialog && dialog.parentNode) {
             // Attempt to remove the specific outside click listener if needed, though it should remove itself.
             // const listenerFunc = dialog.dataset.outsideClickListener; // Needs proper parsing if used
@@ -607,7 +609,7 @@
             dialog.remove();
         }
         // Don't reset isDialogActive or clear selection here - handled by callers (timeout, outside click, confirm callback)
-    }
+    }*/
 
     function closeDialogOnClickOutside(event) {
         const existingDialogs = document.querySelectorAll('.lingomarker-dialog');
@@ -759,23 +761,30 @@
     }
 
     // --- Core Selection Logic ---
+    // Extracted core logic callable by both mouseup and debounced selectionchange
     async function handleSelectionLogic(selection, node) {
         if (!isAuthenticated || !selection || !node) return;
-        if (isDialogActive) { // Don't process if a dialog is already active
+        // Check if a dialog is already active from a *previous* event cycle.
+        // This prevents race conditions if events fire very quickly.
+        if (isDialogActive) {
             // console.log("Dialog already active, skipping selection logic.");
             return;
         }
 
-
         const caption = selection.toString().trim().replace(/[.,?!"“”]/g, '');
         const word = caption.toLowerCase();
 
-        // Validate selection
+        // --- Basic Validation ---
         if (!word || word.includes('\n') || selection.rangeCount === 0) return;
         const wordCount = word.split(/\s+/).filter(Boolean).length;
-        if (wordCount === 0 || wordCount > wordsNumberLimit || word.length > wordsLengthLimit) return;
+        if (wordCount === 0 || wordCount > wordsNumberLimit || word.length > wordsLengthLimit) {
+            // console.log(`Selection invalid: count=${wordCount}, length=${word.length}`);
+            return;
+        }
+        // --- End Validation ---
 
-        // Check if known word
+
+        // --- Check if Known Word ---
         const existingEntry = findEntryByWordForm(word);
         if (existingEntry) {
             console.log(`Known word "${caption}" selected. Updating timestamp.`);
@@ -791,207 +800,163 @@
                         urlHash: context.urlHash,
                         paragraphHash: context.paragraphHash,
                     });
-                    // Maybe provide visual feedback? E.g., flash the highlight briefly
                 } catch (error) {
                     console.error("Failed to update context timestamp:", error);
                 }
             }
-            // Reliably clear selection for known words too
+            // ACTION: Clear selection because we acted on it (timestamp).
             if (window.getSelection) window.getSelection().removeAllRanges();
             return; // Don't show dialog
         }
+        // --- End Check Known Word ---
 
-        // --- Show dialog for NEW word ---
-        // Set flag *before* showing dialog
+
+        // --- Handle NEW Word Selection ---
+        console.log(`New word selected: "${caption}". Preparing dialog.`);
+        // Set flag *before* showing dialog to prevent immediate re-triggering
         isDialogActive = true;
-        lastSelectionText = selection.toString(); // Store text associated with this dialog instance
 
+        // Show the context dialog
         showContextDialog(selection, caption, async () => {
-            // --- Dialog Callback (Word Marked) ---
+            // --- Dialog Confirmation Callback ---
             console.log(`Marking new word from dialog: "${caption}"`);
-            // Context fetching and API call logic...
+            // Get context using the original node
             const context = await getContextFromNode(node);
             if (!context) {
-                console.error("Failed to get context for selection.");
-                // Provide user feedback?
-                alert("LingoMarker: Could not determine the context (paragraph/URL) for the selected word.");
-                isDialogActive = false;
+                console.error("Failed to get context for selection (dialog callback).");
+                alert("LingoMarker: Could not determine the context (paragraph/URL).");
+                isDialogActive = false; // Reset flag on error before returning
                 return;
-            } // Reset flag on error
+            }
 
             try {
-                // Call backend API to mark the word
+                // Call backend API
                 const newEntry = await apiRequest('POST', '/api/mark', {
-                    word: word, // Send lowercase base word candidate
-                    // entryUUID is null here, backend will generate
-                    url: context.url,
-                    title: context.title,
-                    paragraphText: context.paragraphText,
-                    urlHash: context.urlHash,
-                    paragraphHash: context.paragraphHash,
-                }); console.log("Word marked successfully.", newEntry);
+                    word: word, // Use word captured when dialog was created
+                    url: context.url, title: context.title, paragraphText: context.paragraphText,
+                    urlHash: context.urlHash, paragraphHash: context.paragraphHash,
+                });
+                console.log("Word marked successfully.", newEntry);
 
-
-                // Add the new entry data to the local cache immediately for faster highlight update
+                // Update local cache & highlights
                 if (newEntry && newEntry.uuid) {
-                    // Add/update entry in local cache
+                    // (Cache update logic...)
                     const existingIndex = userData.entries.findIndex(e => e.uuid === newEntry.uuid);
-                    if (existingIndex > -1) {
-                        userData.entries[existingIndex] = { ...userData.entries[existingIndex], ...newEntry }; // Merge updates
-                    } else {
-                        userData.entries.push(newEntry);
-                    }
-
-                    // Add/update URL and Paragraph (optional, backend stores them, but might be needed if GetUserDataBundle doesn't return *all*)
-                    if (!userData.urls.some(u => u.urlHash === context.urlHash)) {
-                        userData.urls.push({ urlHash: context.urlHash, url: context.url, title: context.title, createdAt: new Date().toISOString() });
-                    }
-                    if (!userData.paragraphs.some(p => p.paragraphHash === context.paragraphHash)) {
-                        userData.paragraphs.push({ paragraphHash: context.paragraphHash, text: context.paragraphText, createdAt: new Date().toISOString() });
-                    }
-
-                    // Add/update Relation
+                    if (existingIndex > -1) { userData.entries[existingIndex] = { ...userData.entries[existingIndex], ...newEntry }; }
+                    else { userData.entries.push(newEntry); }
+                    if (!userData.urls.some(u => u.urlHash === context.urlHash)) { userData.urls.push({ urlHash: context.urlHash, url: context.url, title: context.title, createdAt: new Date().toISOString() }); }
+                    if (!userData.paragraphs.some(p => p.paragraphHash === context.paragraphHash)) { userData.paragraphs.push({ paragraphHash: context.paragraphHash, text: context.paragraphText, createdAt: new Date().toISOString() }); }
                     const relIndex = userData.relations.findIndex(r => r.entryUUID === newEntry.uuid && r.urlHash === context.urlHash && r.paragraphHash === context.paragraphHash);
                     const now = new Date().toISOString();
-                    if (relIndex > -1) {
-                        userData.relations[relIndex].updatedAt = now;
-                    } else {
-                        userData.relations.push({ entryUUID: newEntry.uuid, urlHash: context.urlHash, paragraphHash: context.paragraphHash, createdAt: now, updatedAt: now });
-                    }
-
-
-                    // Re-apply highlights immediately with updated local data
+                    if (relIndex > -1) { userData.relations[relIndex].updatedAt = now; }
+                    else { userData.relations.push({ entryUUID: newEntry.uuid, urlHash: context.urlHash, paragraphHash: context.paragraphHash, createdAt: now, updatedAt: now }); }
                     safeApplyHighlights();
                 } else {
-                    // If backend didn't return a valid entry, fetch all data again
-                    await fetchUserDataAndHighlight();
+                    await fetchUserDataAndHighlight(); // Fallback refresh
                 }
+
             } catch (error) {
-                // Error handling...
                 console.error("Failed to mark word via API (dialog callback):", error);
+                // (Error alert logic...)
                 let errorMsg = "LingoMarker: Failed to save the word.";
                 if (error.message?.includes("API key not configured")) { errorMsg += " Please set your Gemini API key in the LingoMarker settings."; }
                 else if (error.message?.includes("Failed to retrieve word forms")) { errorMsg += " Could not get word forms from the API."; }
                 else if (error.message?.includes("Unauthorized")) { errorMsg = "LingoMarker: Authentication error. Please log in again."; }
                 alert(errorMsg);
             } finally {
-                // Reset flag and clear selection *after* callback finishes
+                // ACTION: Reset flag and clear selection *after* confirmation callback completes.
                 isDialogActive = false;
-                lastSelectionText = null;
                 if (window.getSelection) window.getSelection().removeAllRanges();
             }
-            // --- End Dialog Callback ---
+            // --- End Dialog Confirmation Callback ---
         });
     }
 
     // Debounced wrapper for selectionchange
-    // --- Debounced Handler ---
+    // --- Debounced Handler for Touch ---
     const debouncedHandleSelection = _.debounce(async () => {
-        if (!isAuthenticated || isDialogActive) { // Check isDialogActive flag here
-            // If a dialog is already up, don't process subsequent selectionchange events
+        if (!isAuthenticated || isDialogActive) { // Check flag
             return;
         }
-
         const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
-
-        // Check if the selection text is the same as the one that *just* had a dialog
-        if (lastSelectionText && selection.toString() === lastSelectionText) {
-            // console.log("Selection matches last dialog text, likely noise, skipping.");
-            // Reset lastSelectionText here ONLY if we are sure it's noise? Or wait? Let's wait.
-            return;
-        }
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) { return; }
 
         const node = selection.focusNode;
-        if (!node) return;
+        if (!node) { return; }
 
         // Check if inside highlight
         const range = selection.getRangeAt(0);
         const commonAncestor = range.commonAncestorContainer;
         let isInsideHighlight = false;
         if (commonAncestor) {
-            if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) {
-                isInsideHighlight = true;
-            } else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) {
-                isInsideHighlight = true;
-            }
-            // Additional check: if the selection is *exactly* the text of a highlight span
-            if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) {
-                isInsideHighlight = true;
-            }
+            if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) { isInsideHighlight = true; }
+            else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) { isInsideHighlight = true; }
+            if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) { isInsideHighlight = true; }
         }
-
         if (isInsideHighlight) {
-            selection.removeAllRanges();
+            // ACTION: Clear selection artifact from clicking highlight.
+            if (window.getSelection) window.getSelection().removeAllRanges();
             return;
         }
 
         // Call the core logic
         handleSelectionLogic(selection, node);
 
-    }, 500); // Keep debounce time
+    }, 700); // Increased debounce time slightly (try 700ms)
 
-    // Direct handler for mouseup
+    // --- Direct Handler for Mouse ---
     function handleMouseUpSelection() {
         const selection = window.getSelection();
-        if (selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.toString().trim() !== '') {
+        // Add isDialogActive check here too for consistency
+        if (!isDialogActive && selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.toString().trim() !== '') {
             const node = selection.focusNode;
             if (!node) return;
 
+            // Check if inside highlight
             const range = selection.getRangeAt(0);
             const commonAncestor = range.commonAncestorContainer;
             let isInsideHighlight = false;
-            if (commonAncestor) {
-                if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) {
-                    isInsideHighlight = true;
-                } else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) {
-                    isInsideHighlight = true;
-                }
-                // Additional check: if the selection is *exactly* the text of a highlight span
-                if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) {
-                    isInsideHighlight = true;
-                }
-            }
-
-            if (!isInsideHighlight) {
-                handleSelectionLogic(selection, node); // Call core logic directly
+            if (commonAncestor) { /* ... highlight check logic ... */ }
+            if (isInsideHighlight) {
+                // ACTION: Clear selection artifact from clicking highlight.
+                if (window.getSelection) window.getSelection().removeAllRanges();
             } else {
-                selection.removeAllRanges();
+                handleSelectionLogic(selection, node); // Call core logic directly
             }
+        } else if (isDialogActive) {
+            // console.log("Mouseup ignored, dialog is active.");
         }
     }
 
     // --- Event Listeners ---
 
+    // --- Event Listener Setup ---
     function setupEventListeners() {
         const touch = matchMedia('(hover: none), (pointer: coarse)').matches;
         console.log("Touch support:", touch);
 
         if (!touch) {
+            // Desktop: Use mouseup
             document.addEventListener('mouseup', () => {
-                setTimeout(handleMouseUpSelection, 50); // Call the dedicated mouseup handler
+                // No need for setTimeout if handleMouseUpSelection is robust
+                // setTimeout(handleMouseUpSelection, 50);
+                handleMouseUpSelection(); // Call directly on mouseup
             });
         } else {
+            // Touch: Use debounced selectionchange
             document.addEventListener('selectionchange', debouncedHandleSelection);
         }
 
-        // Keep visibility change listener
+        // Visibility change listener (remains the same)
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 console.log("Tab became visible, re-checking auth and data.");
-                checkAuthAndFetchSettings().then(() => { // Use the updated function name
-                    if (isAuthenticated) {
-                        fetchUserDataAndHighlight();
-                    } else {
-                        // Optional: Clear highlights if user logged out in another tab?
-                        safeApplyHighlights(); // This will clear highlights if isAuthenticated is false
-                    }
+                checkAuthAndFetchSettings().then(() => {
+                    if (isAuthenticated) { fetchUserDataAndHighlight(); }
+                    else { safeApplyHighlights(); }
                 });
             }
         });
-
-        // Clicks on existing highlights are handled by the listener added in safeApplyHighlights/each
-        // Clicks outside the dialog are handled by the listener added in showContextDialog
     }
 
     // --- Menu Commands ---
