@@ -434,7 +434,6 @@
                             parent = parent.parentNode;
                         }
                         return true;
-
                     }
                 });
             }
@@ -618,35 +617,6 @@
         }
     }
 
-    // Updated closeDialog to ensure listener cleanup if possible (though maybe handled by the listener itself now)
-    /*function closeDialog(dialog) {
-        if (dialog && dialog.parentNode) {
-            // Attempt to remove the specific outside click listener if needed, though it should remove itself.
-            // const listenerFunc = dialog.dataset.outsideClickListener; // Needs proper parsing if used
-            // if (listenerFunc) document.removeEventListener('click', ??? , true);
-            dialog.remove();
-        }
-        // Don't reset isDialogActive or clear selection here - handled by callers (timeout, outside click, confirm callback)
-    }*/
-
-    function closeDialogOnClickOutside(event) {
-        const existingDialogs = document.querySelectorAll('.lingomarker-dialog');
-        // Check if the click was outside ALL dialogs
-        let clickedOutside = true;
-        existingDialogs.forEach(dialog => {
-            if (dialog.contains(event.target)) {
-                clickedOutside = false;
-            }
-        });
-
-        if (clickedOutside) {
-            // console.log("Clicked outside dialog, closing.");
-            existingDialogs.forEach(d => d.remove());
-            document.removeEventListener('click', closeDialogOnClickOutside, true); // Clean up listener
-        }
-    }
-
-
     async function sha256(message) {
         const msgBuffer = new TextEncoder().encode(message);
         const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -709,7 +679,6 @@
             const urlFragment = nodeUrl.includes('#') ? nodeUrl.split('#')[1] : null;
             const titleText = (document.title || "").trim();
             const finalTitle = urlFragment ? `${titleText} #${urlFragment}` : titleText;
-
 
             return {
                 paragraphText: paragraphText,
@@ -804,7 +773,6 @@
             return;
         }
         // --- End Validation ---
-
 
         // --- Check if Known Word ---
         const existingEntry = findEntryByWordForm(word);
