@@ -30,3 +30,6 @@ certs
 
 # database
 lingomarker_dev.db
+
+# test files
+test

@@ -24,6 +24,7 @@
 // @match        https://*.faz.net/*
 // @match        https://*.lingea.sk/*
 // @match        https://dev.lingomarker.com:*/*
+// @include      http://127.0.0.1:3000/*
 // @exclude      https://dev.lingomarker.com/login*
 // @exclude      https://dev.lingomarker.com/register*
 // @connect      dev.lingomarker.com
@@ -66,6 +67,7 @@
     let allowFragmentUrlList = ['https://www.nytimes.com/', 'https://developer.mozilla.org/']; // Default list
 
     let isDialogActive = false; // Flag to track if dialog is currently shown
+    const touchScreen = matchMedia('(hover: none), (pointer: coarse)').matches;
 
     // --- Initialization ---
 
@@ -517,78 +519,94 @@
     function showContextDialog(selection, caption, callback) {
         lastTrigger = Date.now();
 
-        // Ensure previous dialogs removed (shouldn't be needed if state logic is correct, but safe)
-        const existingDialogs = document.querySelectorAll('.lingomarker-dialog');
-        existingDialogs.forEach(d => d.remove());
+        let dialog = document.querySelector('.lingomarker-dialog');
 
-        const dialog = document.createElement('div');
-        dialog.className = 'lingomarker-dialog notranslate';
-        // Positioning & Styling (as before)
-        const range = selection.getRangeAt(0).cloneRange();
-        const rect = range.getBoundingClientRect();
-        Object.assign(dialog.style, {
-            position: 'absolute',
-            left: `${rect.left + window.scrollX}px`,
-            top: `${rect.bottom + window.scrollY + 20}px`, // Further from the selection
-            zIndex: 9999999999999,
-            background: 'white',
-            padding: '5px 10px', // Smaller padding
-            borderRadius: '4px',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-            fontSize: '14px', // Smaller font
-            textAlign: 'center',
-            cursor: 'pointer',
-            border: '1px solid #ccc'
-        });
-        dialog.textContent = `Mark "${caption}"`;
-
-        // --- Dialog Click (Confirmation) ---
-        dialog.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            // Don't reset isDialogActive or clear selection here.
-            closeDialogVisuals(dialog); // Close visuals only
+        if (dialog) {
             clearTimeout(dialog.dataset.timeoutId); // Clear timeout manually
-            document.removeEventListener('click', outsideClickListener, true); // Remove outside listener
-            if (callback) callback(); // Execute the marking logic (which handles state/selection)
-        });
 
-        if (mutationObserverInstance) mutationObserverInstance.disconnect();
-        document.body.appendChild(dialog);
-
-        // --- Auto-close Timeout ---
-        const timeoutId = setTimeout(() => {
-            console.log("Dialog timed out.");
-            closeDialogVisuals(dialog); // Close visuals only
-            // ACTION: Reset flag, DO NOT clear selection.
-            isDialogActive = false;
-            document.removeEventListener('click', outsideClickListener, true); // Remove outside listener
-            // NOTE: window.getSelection().removeAllRanges(); // <<< REMOVED
-        }, 3000);
-        dialog.dataset.timeoutId = timeoutId; // Store ID to clear it
-
-        // --- Close on Outside Click ---
-        const outsideClickListener = (event) => {
-            // Find the specific dialog instance this listener is for (safer if multiple could exist)
-            const currentDialog = document.querySelector('.lingomarker-dialog'); // Simple assumption: only one dialog
-            if (currentDialog && !currentDialog.contains(event.target)) {
-                console.log("Clicked outside dialog.");
-                clearTimeout(currentDialog.dataset.timeoutId); // Clear the timeout
-                closeDialogVisuals(currentDialog); // Close visuals only
+            // --- Auto-close Timeout ---
+            const timeoutId = setTimeout(() => {
+                console.log("Dialog timed out.");
+                closeDialogVisuals(dialog); // Close visuals only
                 // ACTION: Reset flag, DO NOT clear selection.
                 isDialogActive = false;
-                document.removeEventListener('click', outsideClickListener, true); // Clean up self
+                /// document.removeEventListener('click', outsideClickListener, true); // Remove outside listener; can't do this here :-(
                 // NOTE: window.getSelection().removeAllRanges(); // <<< REMOVED
-            }
-        };
-        // Store listener function itself for potential removal (though it removes itself now)
-        dialog.dataset.outsideClickListener = outsideClickListener;
+            }, 5000);
+            dialog.dataset.timeoutId = timeoutId; // Store ID to clear it
+        } else {
+            dialog = document.createElement('div');
+            dialog.className = 'lingomarker-dialog notranslate';
+            // Positioning & Styling (as before)
+            const range = selection.getRangeAt(0).cloneRange();
+            const rect = range.getBoundingClientRect();
+            Object.assign(dialog.style, {
+                position: 'absolute',
+                left: `${rect.left + window.scrollX}px`,
+                top: `${rect.bottom + window.scrollY + (touchScreen ? 28 : 5)}px`,
+                zIndex: 9999999999999,
+                background: 'white',
+                backgroundColor: 'rgb(208, 180, 111)',
+                padding: '5px 10px', // Smaller padding
+                borderRadius: '4px',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                fontSize: '14px', // Smaller font
+                textAlign: 'center',
+                cursor: 'pointer',
+                border: '1px solid #aaa',
+                padding: '8px 5px 8px 5px'
+            });
 
-        setTimeout(() => { // Delay adding listener slightly
-            document.addEventListener('click', outsideClickListener, true);
-        }, 50);
+            // --- Dialog Click (Confirmation) ---
+            dialog.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Don't reset isDialogActive or clear selection here.
+                closeDialogVisuals(dialog); // Close visuals only
+                clearTimeout(dialog.dataset.timeoutId); // Clear timeout manually
+                document.removeEventListener('click', outsideClickListener, true); // Remove outside listener
+                if (callback) callback(); // Execute the marking logic (which handles state/selection)
+            });
 
-        observeMutations();
+            if (mutationObserverInstance) mutationObserverInstance.disconnect();
+            document.body.appendChild(dialog);
+
+            // --- Auto-close Timeout ---
+            const timeoutId = setTimeout(() => {
+                console.log("Dialog timed out.");
+                closeDialogVisuals(dialog); // Close visuals only
+                // ACTION: Reset flag, DO NOT clear selection.
+                isDialogActive = false;
+                document.removeEventListener('click', outsideClickListener, true); // Remove outside listener
+                // NOTE: window.getSelection().removeAllRanges(); // <<< REMOVED
+            }, 5000);
+            dialog.dataset.timeoutId = timeoutId; // Store ID to clear it
+
+            // --- Close on Outside Click ---
+            const outsideClickListener = (event) => {
+                // Find the specific dialog instance this listener is for (safer if multiple could exist)
+                const currentDialog = document.querySelector('.lingomarker-dialog'); // Simple assumption: only one dialog
+                if (currentDialog && !currentDialog.contains(event.target)) {
+                    console.log("Clicked outside dialog.");
+                    clearTimeout(currentDialog.dataset.timeoutId); // Clear the timeout
+                    closeDialogVisuals(currentDialog); // Close visuals only
+                    // ACTION: Reset flag, DO NOT clear selection.
+                    isDialogActive = false;
+                    document.removeEventListener('click', outsideClickListener, true); // Clean up self
+                    // NOTE: window.getSelection().removeAllRanges(); // <<< REMOVED
+                }
+            };
+            // Store listener function itself for potential removal (though it removes itself now)
+            dialog.dataset.outsideClickListener = outsideClickListener;
+
+            setTimeout(() => { // Delay adding listener slightly
+                document.addEventListener('click', outsideClickListener, true);
+            }, 50);
+        }
+
+        dialog.textContent = `Mark "${caption}"`;
+
+        /// observeMutations();
         return dialog;
     }
 
@@ -768,7 +786,7 @@
         // This prevents race conditions if events fire very quickly.
         if (isDialogActive) {
             // console.log("Dialog already active, skipping selection logic.");
-            return;
+            // return;
         }
 
         const caption = selection.toString().trim().replace(/[.,?!"“”]/g, '');
@@ -778,7 +796,11 @@
         if (!word || word.includes('\n') || selection.rangeCount === 0) return;
         const wordCount = word.split(/\s+/).filter(Boolean).length;
         if (wordCount === 0 || wordCount > wordsNumberLimit || word.length > wordsLengthLimit) {
-            // console.log(`Selection invalid: count=${wordCount}, length=${word.length}`);
+            console.log(`Selection invalid: count=${wordCount}, length=${word.length}`);
+            if (isDialogActive) {
+                const dialog = document.querySelector('.lingomarker-dialog');
+                if (dialog) closeDialogVisuals(dialog); // Close visuals only
+            }
             return;
         }
         // --- End Validation ---
@@ -787,6 +809,10 @@
         // --- Check if Known Word ---
         const existingEntry = findEntryByWordForm(word);
         if (existingEntry) {
+            if (isDialogActive) {
+                const dialog = document.querySelector('.lingomarker-dialog');
+                if (dialog) closeDialogVisuals(dialog); // Close visuals only
+            }
             console.log(`Known word "${caption}" selected. Updating timestamp.`);
             const context = await getContextFromNode(node);
             if (context) {
@@ -805,7 +831,7 @@
                 }
             }
             // ACTION: Clear selection because we acted on it (timestamp).
-            if (window.getSelection) window.getSelection().removeAllRanges();
+            /// if (window.getSelection) window.getSelection().removeAllRanges();
             return; // Don't show dialog
         }
         // --- End Check Known Word ---
@@ -875,7 +901,7 @@
     // Debounced wrapper for selectionchange
     // --- Debounced Handler for Touch ---
     const debouncedHandleSelection = _.debounce(async () => {
-        if (!isAuthenticated || isDialogActive) { // Check flag
+        if (!isAuthenticated) { // Check flag
             return;
         }
         const selection = window.getSelection();
@@ -894,15 +920,19 @@
             if (!isInsideHighlight && range.startContainer === range.endContainer && range.startContainer.parentElement?.classList.contains('lingomarker-highlight')) { isInsideHighlight = true; }
         }
         if (isInsideHighlight) {
+            if (isDialogActive) {
+                const dialog = document.querySelector('.lingomarker-dialog');
+                if (dialog) closeDialogVisuals(dialog); // Close visuals only
+            }
             // ACTION: Clear selection artifact from clicking highlight.
-            if (window.getSelection) window.getSelection().removeAllRanges();
+            /// if (window.getSelection) window.getSelection().removeAllRanges();
             return;
         }
 
         // Call the core logic
         handleSelectionLogic(selection, node);
 
-    }, 700); // Increased debounce time slightly (try 700ms)
+    }, 300);
 
     // --- Direct Handler for Mouse ---
     function handleMouseUpSelection() {
@@ -918,8 +948,12 @@
             let isInsideHighlight = false;
             if (commonAncestor) { /* ... highlight check logic ... */ }
             if (isInsideHighlight) {
+                if (isDialogActive) {
+                    const dialog = document.querySelector('.lingomarker-dialog');
+                    if (dialog) closeDialogVisuals(dialog); // Close visuals only
+                }
                 // ACTION: Clear selection artifact from clicking highlight.
-                if (window.getSelection) window.getSelection().removeAllRanges();
+                /// if (window.getSelection) window.getSelection().removeAllRanges();
             } else {
                 handleSelectionLogic(selection, node); // Call core logic directly
             }
@@ -932,10 +966,7 @@
 
     // --- Event Listener Setup ---
     function setupEventListeners() {
-        const touch = matchMedia('(hover: none), (pointer: coarse)').matches;
-        console.log("Touch support:", touch);
-
-        if (!touch) {
+        if (!touchScreen) {
             // Desktop: Use mouseup
             document.addEventListener('mouseup', () => {
                 // No need for setTimeout if handleMouseUpSelection is robust
