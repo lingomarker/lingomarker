@@ -391,6 +391,7 @@
         const regex = getRegexFromUserData();
 
         markInstance.unmark({
+            exclude: ['a[data-immersive-translate-walked]'],
             done: () => {
                 if (!regex) { // No words to highlight
                     isHighlighting = false;
@@ -708,6 +709,14 @@
                 if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
                     // Ignore changes to text nodes directly inside highlights?
                     let isHighlightTextChange = false;
+
+                    if (mutation.addedNodes.length > 0 && mutation.addedNodes[0].classList && mutation.addedNodes[0].classList.length > 0 && mutation.addedNodes[0].classList[0] === 'notranslate') {
+                        break;
+                    }
+                    if (mutation.removedNodes.length > 0 && mutation.removedNodes[0].classList && mutation.removedNodes[0].classList.length > 0 && mutation.removedNodes[0].classList[0] === 'notranslate') {
+                        break;
+                    }
+
                     if (mutation.target.classList?.contains('lingomarker-highlight') && mutation.addedNodes.length === 1 && mutation.addedNodes[0].nodeType === Node.TEXT_NODE) {
                         isHighlightTextChange = true;
                     }
