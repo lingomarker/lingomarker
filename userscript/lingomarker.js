@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.5
+// @version      0.6
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -758,12 +758,6 @@
     // Extracted core logic callable by both mouseup and debounced selectionchange
     async function handleSelectionLogic(selection, node) {
         if (!isAuthenticated || !selection || !node) return;
-        // Check if a dialog is already active from a *previous* event cycle.
-        // This prevents race conditions if events fire very quickly.
-        if (isDialogActive) {
-            // console.log("Dialog already active, skipping selection logic.");
-            // return;
-        }
 
         const caption = selection.toString().trim().replace(/[.,?!"“”]/g, '');
         const word = caption.toLowerCase();
