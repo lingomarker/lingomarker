@@ -122,7 +122,7 @@
                 --lingomarker-highlight-bg: ${highlightColor}; /* Set initial/default value */
                 --lingomarker-highlight-bg-hover: ${highlightColor.replace('0.4', '0.6')}; /* Calculate hover default too */
             }
-   
+
             .lingomarker-highlight {
                 background-color: var(--lingomarker-highlight-bg) !important; /* Use the variable */
                 cursor: pointer;
@@ -391,7 +391,7 @@
         const regex = getRegexFromUserData();
 
         markInstance.unmark({
-            exclude: ['a[data-immersive-translate-walked]'],
+            exclude: ['span[data-immersive-translate-walked]'],
             done: () => {
                 if (!regex) { // No words to highlight
                     isHighlighting = false;
