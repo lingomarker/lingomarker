@@ -321,3 +321,26 @@ func (h *WebHandlers) HandleSettingsPage(w http.ResponseWriter, r *http.Request)
 
 	http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 }
+
+func (h *WebHandlers) HandlePodcastUploadPage(w http.ResponseWriter, r *http.Request) {
+	// AuthMiddleware ensures user is logged in
+	userID := r.Context().Value(UserIDContextKey).(int64)
+	user, err := h.DB.GetUserByID(userID)
+	if err != nil || user == nil {
+		log.Printf("Error fetching user %d for podcast upload page: %v", userID, err)
+		http.Error(w, "User not found", http.StatusInternalServerError)
+		return
+	}
+
+	// Potential messages from redirects (though unlikely with JS approach)
+	message := r.URL.Query().Get("message")
+	errorMsg := r.URL.Query().Get("error")
+
+	data := map[string]interface{}{
+		"Title":   "Upload Podcast",
+		"User":    user, // Pass user info if needed in template
+		"Message": message,
+		"Error":   errorMsg,
+	}
+	h.renderTemplate(w, "podcast_upload.html", data)
+}

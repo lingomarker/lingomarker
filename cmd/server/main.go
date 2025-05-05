@@ -90,6 +90,7 @@ func main() {
 	mux.Handle("/logout", authMW(http.HandlerFunc(webHandlers.HandleLogout)))
 	mux.Handle("/training", authMW(http.HandlerFunc(webHandlers.HandleTrainingPage)))
 	mux.Handle("/settings", authMW(http.HandlerFunc(webHandlers.HandleSettingsPage)))
+	mux.Handle("/podcasts/upload", authMW(http.HandlerFunc(webHandlers.HandlePodcastUploadPage)))
 
 	// Authenticated API Endpoints
 	apiRouter := http.NewServeMux() // Sub-router for API clarity
