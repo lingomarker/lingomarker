@@ -8,6 +8,7 @@ import (
 	"lingomarker/internal/database"
 	"lingomarker/internal/handlers"
 	"lingomarker/internal/tlsgen"
+	"lingomarker/internal/transcription"
 	"log"
 	"net/http"
 	"os"
@@ -61,9 +62,15 @@ func main() {
 		log.Fatalf("Failed to load HTML templates: %v", err)
 	}
 
+	// --- Initialize Transcription Service ---
+	transcriptionCfg := &transcription.Config{
+		ModelName: "gemini-2.0-flash", // Make this configurable later if needed
+	}
+	transcriptionSvc := transcription.NewService(transcriptionCfg)
+
 	// --- Handlers ---
 	webHandlers := &handlers.WebHandlers{DB: db, Cfg: cfg, Templates: templates}
-	apiHandlers := &handlers.APIHandlers{DB: db, Cfg: cfg}
+	apiHandlers := &handlers.APIHandlers{DB: db, Cfg: cfg, TranscriptionSvc: transcriptionSvc}
 
 	// --- Router (using standard library mux) ---
 	mux := http.NewServeMux()
@@ -92,6 +99,7 @@ func main() {
 	apiRouter.Handle("/api/entries/", authMW(http.HandlerFunc(apiHandlers.HandleDeleteEntry))) // Note trailing slash for prefix match
 	apiRouter.Handle("/api/training/data", authMW(http.HandlerFunc(apiHandlers.HandleGetTrainingData)))
 	apiRouter.Handle("/api/import", authMW(http.HandlerFunc(apiHandlers.HandleImportData))) // Temporary Import
+	apiRouter.Handle("/api/podcasts", authMW(http.HandlerFunc(apiHandlers.HandlePodcastUpload)))
 
 	// Mount API router under /
 	mux.Handle("/api/", apiRouter) // Handle requests starting with /api/

@@ -10,13 +10,13 @@ type User struct {
 }
 
 type UserSettings struct {
-	UserID                int64    `json:"-"`
-	GeminiAPIKey          string   `json:"-"` // Keep sensitive info out of JSON where possible
-	DictBaseURL           string   `json:"dictBaseUrl"`           // Expose non-sensitive settings
-	AllowFragmentURLList  string   `json:"allowFragmentUrlList"`  // Keep as string for easier JSON/DB handling
-	WordsNumberLimit      int      `json:"wordsNumberLimit"`
-	WordsLengthLimit      int      `json:"wordsLengthLimit"`
-	HighlightColor        string   `json:"highlightColor"`
+	UserID               int64  `json:"-"`
+	GeminiAPIKey         string `json:"-"`                    // Keep sensitive info out of JSON where possible
+	DictBaseURL          string `json:"dictBaseUrl"`          // Expose non-sensitive settings
+	AllowFragmentURLList string `json:"allowFragmentUrlList"` // Keep as string for easier JSON/DB handling
+	WordsNumberLimit     int    `json:"wordsNumberLimit"`
+	WordsLengthLimit     int    `json:"wordsLengthLimit"`
+	HighlightColor       string `json:"highlightColor"`
 }
 
 // Data structures based on UserScript needs, adapted for SQL
@@ -72,4 +72,40 @@ type TrainingItem struct {
 	Paragraph string    `json:"paragraph"`
 	Word      string    `json:"word"` // Base word from Entry
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// PodcastStatus defines the possible states of a podcast transcription job.
+type PodcastStatus string
+
+const (
+	StatusUploaded     PodcastStatus = "uploaded"
+	StatusTranscribing PodcastStatus = "transcribing"
+	StatusCompleted    PodcastStatus = "completed"
+	StatusFailed       PodcastStatus = "failed"
+)
+
+type Podcast struct {
+	ID                 string        `json:"id"` // UUID
+	UserID             int64         `json:"-"`  // Belongs to user
+	Filename           string        `json:"filename"`
+	StorePath          string        `json:"-"` // Internal storage path
+	Producer           string        `json:"producer"`
+	Series             string        `json:"series"`
+	Episode            string        `json:"episode"`
+	Description        *string       `json:"description,omitempty"` // Nullable
+	OriginalTranscript *string       `json:"-"`                     // Keep potentially large text out of list views initially
+	FinalTranscript    *string       `json:"-"`                     // Keep potentially large JSON out of list views initially
+	UploadTime         time.Time     `json:"uploadTime"`
+	Status             PodcastStatus `json:"status"`
+	ErrorMessage       *string       `json:"errorMessage,omitempty"` // Nullable error message
+}
+
+// Add struct for list view if needed later (omitting large fields)
+type PodcastListItem struct {
+	ID         string        `json:"id"`
+	Producer   string        `json:"producer"`
+	Series     string        `json:"series"`
+	Episode    string        `json:"episode"`
+	UploadTime time.Time     `json:"uploadTime"`
+	Status     PodcastStatus `json:"status"`
 }

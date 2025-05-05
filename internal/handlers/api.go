@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -10,8 +11,11 @@ import (
 	"lingomarker/internal/config"
 	"lingomarker/internal/database"
 	"lingomarker/internal/models"
+	"lingomarker/internal/transcription"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +24,9 @@ import (
 )
 
 type APIHandlers struct {
-	DB  *database.DB
-	Cfg *config.Config
+	DB               *database.DB
+	Cfg              *config.Config
+	TranscriptionSvc *transcription.Service
 }
 
 // Helper to write JSON responses
@@ -442,4 +447,186 @@ func (h *APIHandlers) HandleImportData(w http.ResponseWriter, r *http.Request) {
 		"importedParagraphs": paras,
 		"importedRelations":  rels,
 	})
+}
+
+// HandlePodcastUpload handles multipart form upload for podcasts.
+func (h *APIHandlers) HandlePodcastUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		return
+	}
+
+	userID := r.Context().Value(UserIDContextKey).(int64)
+
+	// --- Parse Multipart Form ---
+	// Set max upload size (e.g., 500MB) - make configurable?
+	maxUploadSize := int64(500 * 1024 * 1024)
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		log.Printf("Error parsing multipart form for user %d: %v", userID, err)
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("Failed to parse form: %v. Max size: %dMB", err, maxUploadSize/(1024*1024)))
+		return
+	}
+
+	// --- Get Form Fields ---
+	producer := r.FormValue("producer")
+	series := r.FormValue("series")
+	episode := r.FormValue("episode")
+	description := r.FormValue("description")                // Optional
+	originalTranscript := r.FormValue("original_transcript") // Optional
+
+	// Basic validation for required fields
+	if producer == "" || series == "" || episode == "" {
+		writeJSONError(w, http.StatusBadRequest, "Missing required fields: producer, series, episode")
+		return
+	}
+
+	// --- Handle File Upload ---
+	file, handler, err := r.FormFile("audio_file") // Field name in the form
+	if err != nil {
+		if errors.Is(err, http.ErrMissingFile) {
+			writeJSONError(w, http.StatusBadRequest, "Missing required field: audio_file")
+		} else {
+			log.Printf("Error retrieving audio file for user %d: %v", userID, err)
+			writeJSONError(w, http.StatusInternalServerError, "Error processing uploaded file")
+		}
+		return
+	}
+	defer file.Close()
+
+	// --- Validate File (Basic) ---
+	// Check file size again (client might bypass initial limit)
+	if handler.Size > maxUploadSize {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("File size exceeds limit of %dMB", maxUploadSize/(1024*1024)))
+		return
+	}
+	// Check MIME type (simple check based on extension, more robust check needed for production)
+	allowedExtensions := map[string]bool{".mp3": true, ".m4a": true, ".wav": true, ".ogg": true} // Add more as needed
+	fileExt := strings.ToLower(filepath.Ext(handler.Filename))
+	if !allowedExtensions[fileExt] {
+		writeJSONError(w, http.StatusBadRequest, "Invalid file type. Allowed types: mp3, m4a, wav, ogg")
+		return
+	}
+
+	// --- Prepare Storage ---
+	podcastID := uuid.NewString()
+	storeFilename := podcastID + fileExt                                          // e.g., bb1b7348-....mp3
+	storeDir := filepath.Join(h.Cfg.Storage.UploadDir, fmt.Sprintf("%d", userID)) // Store uploads in user-specific subdirs
+	storePath := filepath.Join(storeDir, storeFilename)
+
+	// Ensure upload directory exists
+	if err := os.MkdirAll(storeDir, 0750); err != nil { // Use more restrictive permissions maybe?
+		log.Printf("Error creating upload directory %s for user %d: %v", storeDir, userID, err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to prepare storage location")
+		return
+	}
+
+	// --- Save Uploaded File ---
+	dst, err := os.Create(storePath)
+	if err != nil {
+		log.Printf("Error creating destination file %s for user %d: %v", storePath, userID, err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to save uploaded file")
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		// Clean up partially written file on error?
+		_ = os.Remove(storePath)
+		log.Printf("Error copying uploaded file to %s for user %d: %v", storePath, userID, err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to write uploaded file")
+		return
+	}
+	log.Printf("User %d uploaded file: %s saved to %s", userID, handler.Filename, storePath)
+
+	// --- Create Database Record ---
+	podcastRecord := &models.Podcast{
+		ID:         podcastID,
+		UserID:     userID,
+		Filename:   handler.Filename, // Store original name
+		StorePath:  storePath,        // Store full path for now
+		Producer:   producer,
+		Series:     series,
+		Episode:    episode,
+		UploadTime: time.Now(),
+		Status:     models.StatusUploaded,
+	}
+	if description != "" {
+		podcastRecord.Description = &description
+	}
+	if originalTranscript != "" {
+		podcastRecord.OriginalTranscript = &originalTranscript
+	}
+
+	if err := h.DB.CreatePodcastRecord(podcastRecord); err != nil {
+		// Clean up saved file if DB record fails
+		_ = os.Remove(storePath)
+		log.Printf("Error creating podcast record in DB for user %d, file %s: %v", userID, podcastID, err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to save podcast metadata")
+		return
+	}
+
+	// --- Trigger Asynchronous Transcription ---
+	go h.startTranscription(userID, podcastID, storePath, description, originalTranscript)
+
+	// --- Respond to Client ---
+	log.Printf("Podcast %s uploaded successfully for user %d. Transcription started.", podcastID, userID)
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"message":   "Upload successful, transcription processing started.",
+		"podcastId": podcastID,
+	})
+}
+
+// startTranscription is run in a goroutine to handle the transcription process.
+func (h *APIHandlers) startTranscription(userID int64, podcastID, audioFilePath, description, originalTranscript string) {
+	log.Printf("Starting transcription goroutine for podcast %s (user %d)", podcastID, userID)
+
+	// 1. Update status to 'transcribing'
+	// Note: Using background context for DB update within goroutine
+	ctx := context.Background() // Use a background context
+	err := h.DB.UpdatePodcastStatus(userID, podcastID, models.StatusTranscribing, nil)
+	if err != nil {
+		log.Printf("Error updating podcast %s status to 'transcribing': %v", podcastID, err)
+		// Might want to retry or log failure permanently? For now, just log.
+		return // Don't proceed if we can't even update status
+	}
+
+	// 2. Get User's API Key
+	settings, err := h.DB.GetUserSettings(userID)
+	if err != nil {
+		log.Printf("Error getting settings for user %d during transcription start: %v", userID, err)
+		errMsg := "Failed to retrieve API key settings"
+		_ = h.DB.UpdatePodcastStatus(userID, podcastID, models.StatusFailed, &errMsg)
+		return
+	}
+	if settings == nil || settings.GeminiAPIKey == "" {
+		log.Printf("User %d missing Gemini API key for transcription.", userID)
+		errMsg := "Gemini API key not configured in settings."
+		_ = h.DB.UpdatePodcastStatus(userID, podcastID, models.StatusFailed, &errMsg)
+		return
+	}
+	apiKey := settings.GeminiAPIKey
+
+	// 3. Call Transcription Service
+	// Pass original transcript pointer content or empty string
+	origTranscriptStr := ""
+	if originalTranscript != "" {
+		origTranscriptStr = originalTranscript
+	}
+	descStr := ""
+	if description != "" {
+		descStr = description
+	}
+
+	finalTranscriptJSON, err := h.TranscriptionSvc.TranscribeAudioFile(ctx, audioFilePath, descStr, origTranscriptStr, apiKey)
+
+	// 4. Update Database with Result
+	if err != nil {
+		log.Printf("Transcription failed for podcast %s (user %d): %v", podcastID, userID, err)
+		errMsg := err.Error() // Store the error message
+		_ = h.DB.UpdatePodcastTranscript(userID, podcastID, nil, models.StatusFailed, &errMsg)
+	} else {
+		log.Printf("Transcription completed successfully for podcast %s (user %d)", podcastID, userID)
+		// Store the JSON string
+		_ = h.DB.UpdatePodcastTranscript(userID, podcastID, &finalTranscriptJSON, models.StatusCompleted, nil)
+	}
 }

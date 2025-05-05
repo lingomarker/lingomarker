@@ -33,3 +33,6 @@ lingomarker_dev.db
 
 # test files
 test
+
+# uploads folder
+uploads

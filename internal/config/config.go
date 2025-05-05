@@ -31,6 +31,9 @@ type Config struct {
 		TemplateDir string `yaml:"template_dir"`
 		StaticDir   string `yaml:"static_dir"`
 	} `yaml:"web"`
+	Storage struct {
+		UploadDir string `yaml:"upload_dir"`
+	} `yaml:"storage"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -68,7 +71,7 @@ func LoadConfig(path string) (*Config, error) {
 		Gemini: struct {
 			APIEndpoint string `yaml:"api_endpoint"`
 		}{
-			APIEndpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", // Or your preferred model
+			APIEndpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", // Or your preferred model
 		},
 		Web: struct {
 			TemplateDir string `yaml:"template_dir"`
@@ -76,6 +79,11 @@ func LoadConfig(path string) (*Config, error) {
 		}{
 			TemplateDir: "./web/templates",
 			StaticDir:   "./web/static",
+		},
+		Storage: struct {
+			UploadDir string `yaml:"upload_dir"`
+		}{
+			UploadDir: "./uploads", // Default upload directory
 		},
 	}
 

@@ -130,6 +130,25 @@ func createSchema(db *sql.DB) error {
         CREATE INDEX IF NOT EXISTS idx_relations_user_entry ON relations(user_id, entry_uuid);
         CREATE INDEX IF NOT EXISTS idx_relations_user_updated ON relations(user_id, updated_at);
 
+				CREATE TABLE IF NOT EXISTS podcasts (
+        id TEXT PRIMARY KEY,                        -- UUID v4
+        user_id INTEGER NOT NULL,
+        filename TEXT NOT NULL,                     -- Original filename from upload
+        store_path TEXT UNIQUE NOT NULL,            -- Relative path on server filesystem
+        producer TEXT NOT NULL,
+        series TEXT NOT NULL,
+        episode TEXT NOT NULL,
+        description TEXT,                           -- Optional episode description
+        original_transcript TEXT,                   -- Optional provided transcript
+        final_transcript TEXT,                      -- Generated JSON transcript (nullable initially)
+        upload_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+        status TEXT NOT NULL DEFAULT 'uploaded' CHECK(status IN ('uploaded', 'transcribing', 'completed', 'failed')),
+        error_message TEXT,                         -- Store error message on failure (New)
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+				CREATE INDEX IF NOT EXISTS idx_podcasts_user_status ON podcasts(user_id, status);
+				CREATE INDEX IF NOT EXISTS idx_podcasts_user_upload_time ON podcasts(user_id, upload_time);
+
         `
 	_, err := db.Exec(schema)
 	return err
@@ -706,3 +725,66 @@ func (db *DB) ImportData(userID int64, data map[string]map[string][]string) (int
 		userID, importedEntries, importedUrls, importedParagraphs, importedRelations)
 	return importedEntries, importedUrls, importedParagraphs, importedRelations, nil
 }
+
+// CreatePodcastRecord inserts initial podcast metadata into the DB.
+func (db *DB) CreatePodcastRecord(p *models.Podcast) error {
+	_, err := db.Exec(`
+        INSERT INTO podcasts (id, user_id, filename, store_path, producer, series, episode, description, original_transcript, status, upload_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.UserID, p.Filename, p.StorePath, p.Producer, p.Series, p.Episode, p.Description, p.OriginalTranscript, p.Status, p.UploadTime,
+	)
+	if err != nil {
+		// Check for UNIQUE constraint violation on store_path explicitly if needed
+		return fmt.Errorf("failed to insert podcast record %s: %w", p.ID, err)
+	}
+	return nil
+}
+
+// UpdatePodcastStatus updates only the status and error message of a podcast record.
+func (db *DB) UpdatePodcastStatus(userID int64, podcastID string, status models.PodcastStatus, errMsg *string) error {
+	res, err := db.Exec(`
+        UPDATE podcasts SET status = ?, error_message = ?, upload_time = upload_time -- Keep original upload time
+        WHERE id = ? AND user_id = ?`,
+		status, errMsg, podcastID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update status for podcast %s: %w", podcastID, err)
+	}
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("podcast %s not found for user %d or status unchanged", podcastID, userID)
+	}
+	return nil
+}
+
+// UpdatePodcastTranscript updates the final transcript, status, and error message.
+func (db *DB) UpdatePodcastTranscript(userID int64, podcastID string, finalTranscript *string, status models.PodcastStatus, errMsg *string) error {
+	res, err := db.Exec(`
+		UPDATE podcasts SET final_transcript = ?, status = ?, error_message = ?, upload_time = upload_time
+		WHERE id = ? AND user_id = ?`,
+		finalTranscript, status, errMsg, podcastID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update transcript for podcast %s: %w", podcastID, err)
+	}
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("podcast %s not found for user %d or transcript unchanged", podcastID, userID)
+	}
+	return nil
+}
+
+// GetPodcastStorePath retrieves the storage path for transcription.
+func (db *DB) GetPodcastStorePath(userID int64, podcastID string) (string, error) {
+	var storePath string
+	err := db.QueryRow("SELECT store_path FROM podcasts WHERE id = ? AND user_id = ?", podcastID, userID).Scan(&storePath)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("podcast %s not found for user %d", podcastID, userID)
+		}
+		return "", fmt.Errorf("failed to query store path for podcast %s: %w", podcastID, err)
+	}
+	return storePath, nil
+}
+
+// (Add GetPodcastByID, ListPodcastsByUser etc. later when needed for UI)

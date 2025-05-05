@@ -6,6 +6,8 @@ database:
   dsn: ./lingomarker_dev.db
 session:
   secret_key: "a-better-secret-key-for-development-but-still-not-prod" # Change this!
+storage:
+  upload_dir: ./uploads 
 
 # web: # Use defaults
 # gemini: # Use defaults
