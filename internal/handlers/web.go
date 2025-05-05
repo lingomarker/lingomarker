@@ -344,3 +344,20 @@ func (h *WebHandlers) HandlePodcastUploadPage(w http.ResponseWriter, r *http.Req
 	}
 	h.renderTemplate(w, "podcast_upload.html", data)
 }
+
+func (h *WebHandlers) HandlePodcastListPage(w http.ResponseWriter, r *http.Request) {
+	// AuthMiddleware ensures user is logged in
+	userID := r.Context().Value(UserIDContextKey).(int64)
+	user, err := h.DB.GetUserByID(userID)
+	if err != nil || user == nil {
+		log.Printf("Error fetching user %d for podcast list page: %v", userID, err)
+		http.Error(w, "User not found", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Title": "My Podcasts",
+		"User":  user,
+	}
+	h.renderTemplate(w, "podcast_list.html", data)
+}

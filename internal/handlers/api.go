@@ -11,6 +11,7 @@ import (
 	"lingomarker/internal/config"
 	"lingomarker/internal/database"
 	"lingomarker/internal/models"
+	"lingomarker/internal/router"
 	"lingomarker/internal/transcription"
 	"log"
 	"net/http"
@@ -382,14 +383,14 @@ func callGeminiForWordForms(cfg *config.Config, apiKey, word string) (string, er
 // HandleDeleteEntry removes a word entry and its relations
 func (h *APIHandlers) HandleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(UserIDContextKey).(int64)
-	// Get entry UUID from URL path parameter (requires a router like gorilla/mux or chi, or simple string splitting)
-	// Assuming path like /api/entries/{uuid}
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/entries/"), "/")
-	if len(parts) != 1 || parts[0] == "" {
-		writeJSONError(w, http.StatusBadRequest, "Missing or invalid entry UUID in URL path")
+
+	// Get entry UUID from context
+	entryUUID := router.GetPathParam(r.Context())
+	if entryUUID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Missing entry UUID in URL path")
 		return
 	}
-	entryUUID := parts[0]
+	// Optional: Validate UUID format if needed
 
 	err := h.DB.DeleteEntryAndRelations(userID, entryUUID)
 	if err != nil {
@@ -629,4 +630,88 @@ func (h *APIHandlers) startTranscription(userID int64, podcastID, audioFilePath,
 		// Store the JSON string
 		_ = h.DB.UpdatePodcastTranscript(userID, podcastID, &finalTranscriptJSON, models.StatusCompleted, nil)
 	}
+}
+
+// HandleListPodcasts retrieves a list of podcasts for the logged-in user.
+func (h *APIHandlers) HandleListPodcasts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+		return
+	}
+	userID := r.Context().Value(UserIDContextKey).(int64)
+
+	// Get limit/offset from query params (optional, for pagination later)
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+	limit := 50 // Default limit
+	offset := 0 // Default offset
+	if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+		limit = parsedLimit
+	}
+	if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
+		offset = parsedOffset
+	}
+
+	podcasts, err := h.DB.ListPodcastsByUser(userID, limit, offset)
+	if err != nil {
+		log.Printf("API ListPodcasts: Failed for user %d: %v", userID, err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to retrieve podcast list")
+		return
+	}
+
+	// Return empty array, not null, if no podcasts found
+	if podcasts == nil {
+		podcasts = make([]models.PodcastListItem, 0)
+	}
+
+	writeJSON(w, http.StatusOK, podcasts)
+}
+
+// HandleDeletePodcast handles deleting a podcast record and its file.
+func (h *APIHandlers) HandleDeletePodcast(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Only DELETE method is allowed")
+		return
+	}
+	userID := r.Context().Value(UserIDContextKey).(int64)
+
+	// Get podcast ID from context using router helper
+	podcastID := router.GetPathParam(r.Context())
+	if podcastID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Missing podcast ID in URL path")
+		return
+	}
+	if _, err := uuid.Parse(podcastID); err != nil { // Validate UUID format
+		writeJSONError(w, http.StatusBadRequest, "Invalid podcast ID format")
+		return
+	}
+
+	// Call DB method to delete record (returns store path on success)
+	storePath, err := h.DB.DeletePodcastRecord(userID, podcastID)
+	if err != nil {
+		log.Printf("API DeletePodcast: Failed for user %d, podcast %s: %v", userID, podcastID, err)
+		if strings.Contains(err.Error(), "not found") {
+			writeJSONError(w, http.StatusNotFound, err.Error())
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "Failed to delete podcast record")
+		}
+		return
+	}
+
+	// Attempt to delete the associated audio file from the filesystem *after* DB commit
+	if storePath != "" {
+		err := os.Remove(storePath)
+		if err != nil {
+			// Log error, but don't necessarily fail the request, as DB record is gone.
+			// This could leave orphaned files, may need a cleanup process later.
+			log.Printf("Warning: Failed to delete audio file %s after deleting DB record for podcast %s (user %d): %v", storePath, podcastID, userID, err)
+		} else {
+			log.Printf("Successfully deleted audio file %s for podcast %s (user %d)", storePath, podcastID, userID)
+		}
+	} else {
+		log.Printf("Warning: Store path was empty after deleting podcast %s (user %d), could not delete file.", podcastID, userID)
+	}
+
+	log.Printf("Podcast %s deleted successfully for user %d", podcastID, userID)
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Podcast deleted successfully"})
 }

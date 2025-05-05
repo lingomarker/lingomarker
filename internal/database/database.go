@@ -787,4 +787,83 @@ func (db *DB) GetPodcastStorePath(userID int64, podcastID string) (string, error
 	return storePath, nil
 }
 
-// (Add GetPodcastByID, ListPodcastsByUser etc. later when needed for UI)
+// ListPodcastsByUser retrieves a list of podcasts for a user, ordered by upload time descending.
+func (db *DB) ListPodcastsByUser(userID int64, limit, offset int) ([]models.PodcastListItem, error) {
+	// Ensure limit is reasonable
+	if limit <= 0 || limit > 200 {
+		limit = 50 // Default/max limit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := `
+        SELECT id, producer, series, episode, upload_time, status
+        FROM podcasts
+        WHERE user_id = ?
+        ORDER BY upload_time DESC
+        LIMIT ? OFFSET ?
+    `
+	rows, err := db.Query(query, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query podcasts for user %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	podcasts := make([]models.PodcastListItem, 0)
+	for rows.Next() {
+		var p models.PodcastListItem
+		if err := rows.Scan(&p.ID, &p.Producer, &p.Series, &p.Episode, &p.UploadTime, &p.Status); err != nil {
+			// Log error but continue processing other rows? Or return immediately?
+			log.Printf("Error scanning podcast row for user %d: %v", userID, err)
+			continue // Skip problematic row
+		}
+		podcasts = append(podcasts, p)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating podcast rows for user %d: %w", userID, err)
+	}
+
+	return podcasts, nil
+}
+
+// DeletePodcastRecord removes a podcast record and its associated file.
+// Returns the store_path of the deleted file or an error.
+func (db *DB) DeletePodcastRecord(userID int64, podcastID string) (string, error) {
+	var storePath string
+	// Begin transaction to ensure atomicity
+	tx, err := db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction for podcast deletion: %w", err)
+	}
+	defer tx.Rollback() // Rollback if anything fails
+
+	// Get the store path first within the transaction
+	err = tx.QueryRow("SELECT store_path FROM podcasts WHERE id = ? AND user_id = ?", podcastID, userID).Scan(&storePath)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("podcast %s not found for user %d", podcastID, userID) // Specific not found error
+		}
+		return "", fmt.Errorf("failed to query store path for podcast %s: %w", podcastID, err)
+	}
+
+	// Delete the record from the database within the transaction
+	res, err := tx.Exec("DELETE FROM podcasts WHERE id = ? AND user_id = ?", podcastID, userID)
+	if err != nil {
+		return storePath, fmt.Errorf("failed to delete podcast record %s: %w", podcastID, err)
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		// Should have been caught by the QueryRow earlier, but double-check
+		return storePath, fmt.Errorf("podcast %s not found during delete for user %d", podcastID, userID)
+	}
+
+	// Commit the transaction *before* attempting file deletion
+	if err := tx.Commit(); err != nil {
+		return storePath, fmt.Errorf("failed to commit transaction for podcast deletion: %w", err)
+	}
+
+	// Return the path so the handler can delete the file *after* successful DB commit
+	return storePath, nil
+}

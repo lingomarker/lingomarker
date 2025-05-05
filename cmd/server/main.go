@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"lingomarker/internal/auth"
 	"lingomarker/internal/config"
 	"lingomarker/internal/database"
 	"lingomarker/internal/handlers"
+	"lingomarker/internal/router"
 	"lingomarker/internal/tlsgen"
 	"lingomarker/internal/transcription"
 	"log"
@@ -72,48 +74,83 @@ func main() {
 	webHandlers := &handlers.WebHandlers{DB: db, Cfg: cfg, Templates: templates}
 	apiHandlers := &handlers.APIHandlers{DB: db, Cfg: cfg, TranscriptionSvc: transcriptionSvc}
 
-	// --- Router (using standard library mux) ---
-	mux := http.NewServeMux()
+	// --- Use the SimpleRouter ---
+	mux := router.New()
 
 	// Static files (optional, if needed)
 	// staticFs := http.FileServer(http.Dir(cfg.Web.StaticDir))
 	// mux.Handle("/static/", http.StripPrefix("/static/", staticFs))
 
 	// Public Web Pages (No Auth Required)
-	mux.HandleFunc("/login", webHandlers.HandleLoginPage)
-	mux.HandleFunc("/register", webHandlers.HandleRegisterPage)
+	// Use Handle with method "GET" (or "" for any method if desired)
+	mux.Handle("GET", "/login", http.HandlerFunc(webHandlers.HandleLoginPage))
+	mux.Handle("POST", "/login", http.HandlerFunc(webHandlers.HandleLoginPage)) // Handle POST separately
+	mux.Handle("GET", "/register", http.HandlerFunc(webHandlers.HandleRegisterPage))
+	mux.Handle("POST", "/register", http.HandlerFunc(webHandlers.HandleRegisterPage))
 
 	// Auth Middleware
 	authMW := handlers.AuthMiddleware(db, cfg)
 
 	// Authenticated Web Pages
-	mux.Handle("/logout", authMW(http.HandlerFunc(webHandlers.HandleLogout)))
-	mux.Handle("/training", authMW(http.HandlerFunc(webHandlers.HandleTrainingPage)))
-	mux.Handle("/settings", authMW(http.HandlerFunc(webHandlers.HandleSettingsPage)))
-	mux.Handle("/podcasts/upload", authMW(http.HandlerFunc(webHandlers.HandlePodcastUploadPage)))
+	// Need to wrap handlers with middleware *before* passing to router
+	mux.Handle("POST", "/logout", authMW(http.HandlerFunc(webHandlers.HandleLogout))) // Assuming logout is POST
+	mux.Handle("GET", "/training", authMW(http.HandlerFunc(webHandlers.HandleTrainingPage)))
+	mux.Handle("GET", "/settings", authMW(http.HandlerFunc(webHandlers.HandleSettingsPage)))
+	mux.Handle("POST", "/settings", authMW(http.HandlerFunc(webHandlers.HandleSettingsPage)))
+	mux.Handle("GET", "/podcasts/upload", authMW(http.HandlerFunc(webHandlers.HandlePodcastUploadPage)))
+	mux.Handle("GET", "/podcasts", authMW(http.HandlerFunc(webHandlers.HandlePodcastListPage)))
 
 	// Authenticated API Endpoints
-	apiRouter := http.NewServeMux() // Sub-router for API clarity
-	apiRouter.Handle("/api/session", authMW(http.HandlerFunc(apiHandlers.HandleSessionCheck)))
-	apiRouter.Handle("/api/data", authMW(http.HandlerFunc(apiHandlers.HandleGetData)))
-	apiRouter.Handle("/api/mark", authMW(http.HandlerFunc(apiHandlers.HandleMarkWord)))
-	apiRouter.Handle("/api/entries/", authMW(http.HandlerFunc(apiHandlers.HandleDeleteEntry))) // Note trailing slash for prefix match
-	apiRouter.Handle("/api/training/data", authMW(http.HandlerFunc(apiHandlers.HandleGetTrainingData)))
-	apiRouter.Handle("/api/import", authMW(http.HandlerFunc(apiHandlers.HandleImportData))) // Temporary Import
-	apiRouter.Handle("/api/podcasts", authMW(http.HandlerFunc(apiHandlers.HandlePodcastUpload)))
+	// Note: Register specific paths *before* prefixes if they might overlap
+	mux.Handle("GET", "/api/session", authMW(http.HandlerFunc(apiHandlers.HandleSessionCheck)))
+	mux.Handle("GET", "/api/data", authMW(http.HandlerFunc(apiHandlers.HandleGetData)))
+	mux.Handle("POST", "/api/mark", authMW(http.HandlerFunc(apiHandlers.HandleMarkWord)))
+	mux.Handle("GET", "/api/training/data", authMW(http.HandlerFunc(apiHandlers.HandleGetTrainingData)))
+	mux.Handle("POST", "/api/import", authMW(http.HandlerFunc(apiHandlers.HandleImportData)))
 
-	// Mount API router under /
-	mux.Handle("/api/", apiRouter) // Handle requests starting with /api/
+	// Podcast API routes
+	mux.Handle("POST", "/api/podcasts", authMW(http.HandlerFunc(apiHandlers.HandlePodcastUpload)))
+	mux.Handle("GET", "/api/podcasts", authMW(http.HandlerFunc(apiHandlers.HandleListPodcasts)))
+	// Handle DELETE /api/podcasts/{id} using HandlePrefix
+	// The handler will need to check the method and extract the param from context
+	mux.HandlePrefix("DELETE", "/api/podcasts/", authMW(http.HandlerFunc(apiHandlers.HandleDeletePodcast)))
 
-	// Root redirect
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	// Add other prefix routes if needed, e.g., for GET /api/podcasts/{id}
+	// mux.HandlePrefix("GET", "/api/podcasts/", authMW(http.HandlerFunc(apiHandlers.HandleGetPodcast))) // Example for later
+
+	// Entry Deletion (Requires modification in handler to use GetPathParam)
+	// Assuming /api/entries/{uuid}
+	mux.HandlePrefix("DELETE", "/api/entries/", authMW(http.HandlerFunc(apiHandlers.HandleDeleteEntry))) // Use prefix
+
+	// Root redirect (needs careful handling with method/path)
+	// Simplest: Handle only GET for root redirect
+	mux.Handle("GET", "/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			http.Redirect(w, r, "/training", http.StatusFound) // Redirect logged-in users to training
+			// Check auth status *here* or rely on middleware redirection?
+			// Let's assume if they reach here unauthenticated, they should go to login
+			_, err := auth.GetUserIDFromRequest(r, db, cfg) // Reuse auth check helper
+			if err != nil {
+				http.Redirect(w, r, "/login", http.StatusFound)
+			} else {
+				http.Redirect(w, r, "/training", http.StatusFound) // Redirect logged-in users to training
+			}
 		} else {
-			// Handle 404 for other paths not matched
+			// Let the router's default handle NotFound for other paths
 			http.NotFound(w, r)
 		}
-	})
+	}))
+
+	/*
+		// Root redirect
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/" {
+				http.Redirect(w, r, "/training", http.StatusFound) // Redirect logged-in users to training
+			} else {
+				// Handle 404 for other paths not matched
+				http.NotFound(w, r)
+			}
+		})
+	*/
 
 	// Apply Global Middleware (Logging)
 	loggedMux := handlers.LoggingMiddleware(mux)
