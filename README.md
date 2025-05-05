@@ -1,5 +1,6 @@
 # lingomarker
-Learn a foreign language by reading and listening.
+
+Learn a foreign language by reading your favorite articles and listening to your favorite podcasts.
 
 ```
 curl -k -X POST \
