@@ -232,9 +232,9 @@
       if (target.classList.contains('action-open')) {
         const podcastId = target.dataset.id;
         if (!target.disabled) { // Check if button is enabled (status should be 'completed')
-          console.log(`Opening training page for podcast ${podcastId}...`);
-          // Redirect to the training page (create this route/page next)
-          window.location.href = `/podcasts/training/${podcastId}`;
+          console.log(`Opening podcast play page for podcast ${podcastId}...`);
+          // Redirect to the podcast play page (create this route/page next)
+          window.location.href = `/podcasts/play/${podcastId}`;
         }
       }
     });
