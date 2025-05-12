@@ -119,42 +119,37 @@ func main() {
 	mux.HandlePrefix("DELETE", "/api/podcasts/", authMW(http.HandlerFunc(apiHandlers.HandleDeletePodcast)))
 	// The handler will need to check the method and extract the param from context
 	mux.HandlePrefix("GET", "/api/podcasts/", authMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The router extracts the part *after* /api/podcasts/ into the context
+		// The router now extracts the *entire suffix* after /api/podcasts/
 		pathSuffix := router.GetPathParam(r.Context()) // e.g., "{id}" or "{id}/play_data"
 
 		if pathSuffix == "" {
-			// Request was likely to exactly "/api/podcasts/" (without trailing chars)
-			// This probably shouldn't happen with HandlePrefix ensuring trailing slash, but handle defensively.
-			http.NotFound(w, r)
+			http.NotFound(w, r) // Should ideally not happen with prefix logic
 			return
 		}
 
 		// Check if the suffix matches the pattern "{id}/play_data"
 		if strings.HasSuffix(pathSuffix, "/play_data") {
 			idOnly := strings.TrimSuffix(pathSuffix, "/play_data")
-			if idOnly == "" { // Ensure there was an ID before /play_data
+			if idOnly == "" {
 				http.Error(w, "Missing podcast ID before /play_data", http.StatusBadRequest)
 				return
 			}
-			if _, err := uuid.Parse(idOnly); err != nil { // Validate ID format here
+			// Validate ID format
+			if _, err := uuid.Parse(idOnly); err != nil {
 				http.Error(w, "Invalid podcast ID format in path", http.StatusBadRequest)
 				return
 			}
-			// Re-package context ONLY with the ID for the target handler
-			// (The handler expects *just* the ID via GetPathParam)
+			// Overwrite context ONLY with the ID for the target handler
 			ctxWithID := context.WithValue(r.Context(), router.PathParamContextKey, idOnly)
-			apiHandlers.HandleGetPodcastPlayData(w, r.WithContext(ctxWithID)) // Call the specific handler
+			apiHandlers.HandleGetPodcastPlayData(w, r.WithContext(ctxWithID)) // Call specific handler
 
 		} else if !strings.Contains(pathSuffix, "/") { // Assume it's just "{id}"
-			// This is where GET /api/podcasts/{id} would go later
-			// For now, treat it as not implemented or handle as needed.
-			// Let's validate the ID format here too if we expect just an ID
+			// Validate ID format
 			if _, err := uuid.Parse(pathSuffix); err != nil {
 				http.Error(w, "Invalid podcast ID format in path", http.StatusBadRequest)
 				return
 			}
 			// Call handler for GET /api/podcasts/{id} when implemented
-			// apiHandlers.HandleGetPodcast(w, r) // Pass original context as GetPathParam will return {id}
 			http.Error(w, "GET /api/podcasts/{id} not implemented yet", http.StatusNotImplemented)
 
 		} else {
