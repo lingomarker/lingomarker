@@ -384,10 +384,15 @@ func callGeminiForWordForms(cfg *config.Config, apiKey, word string) (string, er
 func (h *APIHandlers) HandleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(UserIDContextKey).(int64)
 
-	// Get entry UUID from context
+	// Get the full suffix after "/api/entries/"
 	entryUUID := router.GetPathParam(r.Context())
 	if entryUUID == "" {
 		writeJSONError(w, http.StatusBadRequest, "Missing entry UUID in URL path")
+		return
+	}
+	// **Crucial Check**: Ensure no extra parts for DELETE
+	if strings.Contains(entryUUID, "/") {
+		writeJSONError(w, http.StatusBadRequest, "Invalid path for DELETE entry, expected /api/entries/{uuid}")
 		return
 	}
 	// Optional: Validate UUID format if needed
@@ -669,16 +674,17 @@ func (h *APIHandlers) HandleListPodcasts(w http.ResponseWriter, r *http.Request)
 
 // HandleDeletePodcast handles deleting a podcast record and its file.
 func (h *APIHandlers) HandleDeletePodcast(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		writeJSONError(w, http.StatusMethodNotAllowed, "Only DELETE method is allowed")
-		return
-	}
 	userID := r.Context().Value(UserIDContextKey).(int64)
 
-	// Get podcast ID from context using router helper
+	// Get the full suffix after "/api/podcasts/" from context
 	podcastID := router.GetPathParam(r.Context())
 	if podcastID == "" {
 		writeJSONError(w, http.StatusBadRequest, "Missing podcast ID in URL path")
+		return
+	}
+	// **Crucial Check**: Ensure no extra parts for DELETE
+	if strings.Contains(podcastID, "/") {
+		writeJSONError(w, http.StatusBadRequest, "Invalid path for DELETE podcast, expected /api/podcasts/{id}")
 		return
 	}
 	if _, err := uuid.Parse(podcastID); err != nil { // Validate UUID format
@@ -779,7 +785,6 @@ func (h *APIHandlers) HandleGetPodcastPlayData(w http.ResponseWriter, r *http.Re
 		relativeStorePath = strings.TrimPrefix(relativeStorePath, "\\")
 	}
 
-
 	// Parse the JSON transcript string into a Go slice of maps or structs
 	var transcriptData []map[string]interface{} // Or a more specific struct
 	if err := json.Unmarshal([]byte(*podcast.FinalTranscript), &transcriptData); err != nil {
@@ -788,15 +793,14 @@ func (h *APIHandlers) HandleGetPodcastPlayData(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-
 	playData := map[string]interface{}{
-		"id":           podcast.ID,
-		"producer":     podcast.Producer,
-		"series":       podcast.Series,
-		"episode":      podcast.Episode,
-		"description":  podcast.Description,
-		"audioSrc":     "/media/" + relativeStorePath, // Client will prepend domain
-		"transcript":   transcriptData,
+		"id":          podcast.ID,
+		"producer":    podcast.Producer,
+		"series":      podcast.Series,
+		"episode":     podcast.Episode,
+		"description": podcast.Description,
+		"audioSrc":    "/media/" + relativeStorePath, // Client will prepend domain
+		"transcript":  transcriptData,
 		// Don't send original_transcript or full store_path unless needed by client directly
 	}
 

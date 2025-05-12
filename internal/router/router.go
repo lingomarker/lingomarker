@@ -1,3 +1,4 @@
+// internal/router/router.go
 package router
 
 import (
@@ -6,22 +7,21 @@ import (
 	"strings"
 )
 
-// Constants for context keys if we extract path parameters
+// Context key type
 type contextKey string
 
-const PathParamContextKey = contextKey("pathParams")
+const PathParamContextKey = contextKey("pathParams") // Can store string or map[string]string
 
 // SimpleRouter holds routes
 type SimpleRouter struct {
 	routes []route
-	// Can add fields for middleware, etc. later if needed
 }
 
 // route stores information for a single route
 type route struct {
-	method   string // e.g., "GET", "POST"
-	path     string // e.g., "/api/users", "/api/podcasts/" (note trailing slash for prefix)
-	isPrefix bool   // Does this path represent a prefix?
+	method   string
+	path     string
+	isPrefix bool
 	handler  http.Handler
 }
 
@@ -41,10 +41,9 @@ func (r *SimpleRouter) Handle(method, path string, handler http.Handler) {
 }
 
 // HandlePrefix adds a route for a specific method and path prefix match
-// Note: More specific paths should generally be registered *before* broader prefixes
 func (r *SimpleRouter) HandlePrefix(method, path string, handler http.Handler) {
 	if !strings.HasSuffix(path, "/") {
-		path += "/" // Ensure prefix paths end with a slash for clarity
+		path += "/"
 	}
 	r.routes = append(r.routes, route{
 		method:   method,
@@ -61,34 +60,29 @@ func (r *SimpleRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	for _, rt := range r.routes {
 		// 1. Check Method
 		if rt.method != "" && rt.method != req.Method {
-			continue // Method doesn't match
+			continue
 		}
 
 		// 2. Check Path
 		if rt.isPrefix {
 			// Prefix Match
 			if strings.HasPrefix(requestPath, rt.path) {
-				// Simple Parameter Extraction (Example: /prefix/value -> value)
-				// More robust param extraction would need better pattern matching.
-				paramValue := strings.TrimPrefix(requestPath, rt.path)
-				if paramValue != "" && strings.Contains(paramValue, "/") {
-					// Don't match if there are more slashes after the prefix/param
-					// e.g., /prefix/value/extra shouldn't match /prefix/
-					// This is a basic way to handle it; real routers are smarter.
-					// If we need /prefix/value/subpath, register /prefix/ explicitly.
-				} else if paramValue != "" {
-					// Store the extracted part in the context
-					// Note: Only captures ONE value after the prefix.
-					ctx := context.WithValue(req.Context(), PathParamContextKey, paramValue)
-					rt.handler.ServeHTTP(w, req.WithContext(ctx))
-					return // Route handled
-				} else if requestPath == rt.path { // Exact match for prefix path itself
-					rt.handler.ServeHTTP(w, req)
-					return // Route handled
-				}
-				// If paramValue is empty but path has prefix, it might be an exact match handled below
-				// or a mismatch if e.g. reqPath is /prefix/ but route path is /prefix/ (no trailing slash)
-				// Let's assume exact match handles this case. Continue searching.
+				// Extract the full suffix *after* the registered prefix path
+				// Example: rt.path = "/api/podcasts/", requestPath = "/api/podcasts/123/play_data"
+				// suffix = "123/play_data"
+				suffix := strings.TrimPrefix(requestPath, rt.path)
+
+				// *** MODIFIED LOGIC START ***
+				// We *always* match if the prefix matches. The registered handler
+				// is responsible for parsing the suffix and deciding if it's valid.
+				// We store the *entire suffix* in the context for the handler to use.
+				// The handler can then split it by "/" or use regex if needed.
+
+				ctx := context.WithValue(req.Context(), PathParamContextKey, suffix)
+				rt.handler.ServeHTTP(w, req.WithContext(ctx))
+				return // Route handled
+
+				// *** MODIFIED LOGIC END ***
 
 			}
 		} else {
@@ -104,8 +98,8 @@ func (r *SimpleRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	http.NotFound(w, req)
 }
 
-// GetPathParam retrieves a path parameter stored in the context by ServeHTTP.
-// Returns an empty string if not found. (Assumes only one parameter).
+// GetPathParam retrieves the *entire suffix* stored in the context by ServeHTTP for prefix routes.
+// The handler is now responsible for parsing this suffix.
 func GetPathParam(ctx context.Context) string {
 	value, ok := ctx.Value(PathParamContextKey).(string)
 	if !ok {
