@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+{{ template "head.html" . }}
+
+<head>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+
+    #podcast-player-container {
+      margin-bottom: 20px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      background-color: #f9f9f9;
+    }
+
+    #podcast-player {
+      width: 100%;
+    }
+
+    #transcript-container {
+      max-height: 60vh;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      padding: 10px;
+    }
+
+    .transcript-segment {
+      margin-bottom: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    .transcript-segment:hover {
+      background-color: #e6e6e6;
+    }
+
+    .transcript-segment.playing {
+      background-color: #d0e0ff;
+      /* Soft bluish highlight */
+    }
+
+    .transcript-segment .speaker {
+      font-weight: bold;
+      color: #333;
+    }
+
+    .transcript-segment .text {
+      margin-top: 4px;
+      line-height: 1.6;
+    }
+
+    .loading-message {
+      text-align: center;
+      padding: 20px;
+      font-style: italic;
+    }
+
+    #podcast-meta h2 {
+      margin-top: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="podcast-player-container">
+    <div id="podcast-meta">
+      <h2>{{ .Podcast.Episode }}</h2>
+      <p><strong>Producer:</strong> {{ .Podcast.Producer }} | <strong>Series:</strong> {{ .Podcast.Series }}</p>
+      {{ if .Podcast.Description }}
+      <p><em>{{ .Podcast.Description }}</em></p>
+      {{ end }}
+    </div>
+    <audio id="podcast-player" controls></audio>
+  </div>
+
+  <div id="transcript-container">
+    <p class="loading-message">Loading transcript...</p>
+  </div>
+
+  <p style="margin-top: 2em;"><a href="/podcasts">Back to Podcast List</a></p>
+
+  <script>
+    const podcastId = "{{ .PodcastID }}"; // Get ID from Go template
+    const audioPlayer = document.getElementById('podcast-player');
+    const transcriptContainer = document.getElementById('transcript-container');
+    let transcriptData = []; // To store parsed transcript segments
+    let currentPlayingSegment = null; // To track the paragraph playing due to click
+    let lastHighlightedElement = null;
+
+    // --- Helper to parse "HH:MM:SS" or "HH:MM:SS-HH:MM:SS" to seconds ---
+    function parseTimestampToSeconds(ts) {
+      if (!ts) return 0;
+      const parts = ts.split(/[:|-]/); // Split by ':' or '-'
+      let seconds = 0;
+      if (parts.length >= 3) { // HH:MM:SS (start time)
+        seconds = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
+      }
+      return isNaN(seconds) ? 0 : seconds;
+    }
+
+    function getSegmentTimes(timestampStr) {
+      if (!timestampStr) return { start: 0, end: Infinity };
+      const times = timestampStr.split('-');
+      const start = parseTimestampToSeconds(times[0]);
+      const end = times.length > 1 ? parseTimestampToSeconds(times[1]) : Infinity; // Default to Infinity if no end time
+      return { start, end };
+    }
+
+    // --- Render Transcript ---
+    function renderTranscript(segments) {
+      transcriptContainer.innerHTML = ''; // Clear loading message
+      segments.forEach((segment, index) => {
+        const segmentDiv = document.createElement('div');
+        segmentDiv.classList.add('transcript-segment');
+        segmentDiv.dataset.index = index; // For easy lookup
+        const { start, end } = getSegmentTimes(segment.timestamp);
+        segmentDiv.dataset.startTime = start;
+        segmentDiv.dataset.endTime = end;
+
+        const speakerSpan = document.createElement('span');
+        speakerSpan.classList.add('speaker');
+        speakerSpan.textContent = segment.speaker ? `${segment.speaker}:` : 'Unknown Speaker:';
+
+        const textP = document.createElement('p');
+        textP.classList.add('text');
+        textP.textContent = segment.text;
+
+        segmentDiv.appendChild(speakerSpan);
+        segmentDiv.appendChild(textP);
+        transcriptContainer.appendChild(segmentDiv);
+      });
+    }
+
+    // --- Fetch Play Data ---
+    async function fetchPlayData() {
+      try {
+        const response = await fetch(`/api/podcasts/${podcastId}/play_data`);
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to load podcast data: ${response.status}`);
+        }
+        const data = await response.json();
+
+        // Set audio source
+        audioPlayer.src = data.audioSrc; // Assumes domain is the same, or /media/ is correctly routed
+
+        // Store and render transcript
+        transcriptData = data.transcript || [];
+        if (transcriptData.length > 0) {
+          renderTranscript(transcriptData);
+        } else {
+          transcriptContainer.innerHTML = '<p class="loading-message">No transcript available.</p>';
+        }
+
+      } catch (error) {
+        console.error("Error fetching play data:", error);
+        transcriptContainer.innerHTML = `<p class="loading-message" style="color: red;">Error: ${error.message}</p>`;
+      }
+    }
+
+    // --- Audio-to-Text Sync ---
+    audioPlayer.addEventListener('timeupdate', () => {
+      const currentTime = audioPlayer.currentTime;
+      let activeSegment = null;
+
+      for (let i = 0; i < transcriptData.length; i++) {
+        const segmentElement = transcriptContainer.querySelector(`.transcript-segment[data-index="${i}"]`);
+        if (!segmentElement) continue;
+
+        const startTime = parseFloat(segmentElement.dataset.startTime);
+        const endTime = parseFloat(segmentElement.dataset.endTime);
+
+        if (currentTime >= startTime && currentTime < endTime) {
+          activeSegment = segmentElement;
+          break;
+        }
+      }
+
+      // Remove highlight from previously highlighted element
+      if (lastHighlightedElement && lastHighlightedElement !== activeSegment) {
+        lastHighlightedElement.classList.remove('playing');
+      }
+
+      // Add highlight to current active segment
+      if (activeSegment) {
+        if (!activeSegment.classList.contains('playing')) {
+          activeSegment.classList.add('playing');
+          activeSegment.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }
+        lastHighlightedElement = activeSegment;
+      }
+
+      // Stop playback if currentPlayingSegment's end time is reached
+      if (currentPlayingSegment) {
+        const currentSegmentEndTime = parseFloat(currentPlayingSegment.dataset.endTime);
+        if (currentTime >= currentSegmentEndTime) {
+          audioPlayer.pause();
+          currentPlayingSegment = null; // Reset
+          if (lastHighlightedElement) lastHighlightedElement.classList.remove('playing'); // Clear highlight
+        }
+      }
+    });
+
+    // --- Text-to-Audio Sync ---
+    transcriptContainer.addEventListener('click', (event) => {
+      const segmentElement = event.target.closest('.transcript-segment');
+      if (segmentElement) {
+        const startTime = parseFloat(segmentElement.dataset.startTime);
+        if (!isNaN(startTime)) {
+          audioPlayer.currentTime = startTime;
+          audioPlayer.play();
+          currentPlayingSegment = segmentElement; // Set the segment that was clicked
+          // Highlighting will be handled by timeupdate
+        }
+      }
+    });
+
+    // --- Initial Load ---
+    fetchPlayData();
+  </script>
+</body>
+
+</html>

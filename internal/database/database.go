@@ -867,3 +867,44 @@ func (db *DB) DeletePodcastRecord(userID int64, podcastID string) (string, error
 	// Return the path so the handler can delete the file *after* successful DB commit
 	return storePath, nil
 }
+
+// GetPodcastByIDForUser retrieves a single podcast record for a user, including full transcripts.
+func (db *DB) GetPodcastByIDForUser(userID int64, podcastID string) (*models.Podcast, error) {
+	query := `
+        SELECT id, user_id, filename, store_path, producer, series, episode, description,
+               original_transcript, final_transcript, upload_time, status, error_message
+        FROM podcasts
+        WHERE id = ? AND user_id = ?
+    `
+	p := &models.Podcast{}
+	var desc sql.NullString
+	var origTranscript sql.NullString
+	var finalTranscript sql.NullString
+	var errMsg sql.NullString
+
+	err := db.QueryRow(query, podcastID, userID).Scan(
+		&p.ID, &p.UserID, &p.Filename, &p.StorePath, &p.Producer, &p.Series, &p.Episode, &desc,
+		&origTranscript, &finalTranscript, &p.UploadTime, &p.Status, &errMsg,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("podcast %s not found for user %d", podcastID, userID)
+		}
+		return nil, fmt.Errorf("failed to query podcast %s for user %d: %w", podcastID, userID, err)
+	}
+
+	if desc.Valid {
+		p.Description = &desc.String
+	}
+	if origTranscript.Valid {
+		p.OriginalTranscript = &origTranscript.String
+	}
+	if finalTranscript.Valid {
+		p.FinalTranscript = &finalTranscript.String
+	}
+	if errMsg.Valid {
+		p.ErrorMessage = &errMsg.String
+	}
+
+	return p, nil
+}

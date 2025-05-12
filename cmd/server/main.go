@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -99,6 +100,7 @@ func main() {
 	mux.Handle("POST", "/settings", authMW(http.HandlerFunc(webHandlers.HandleSettingsPage)))
 	mux.Handle("GET", "/podcasts/upload", authMW(http.HandlerFunc(webHandlers.HandlePodcastUploadPage)))
 	mux.Handle("GET", "/podcasts", authMW(http.HandlerFunc(webHandlers.HandlePodcastListPage)))
+	mux.HandlePrefix("GET", "/podcasts/play/", authMW(http.HandlerFunc(webHandlers.HandlePodcastPlayPage)))
 
 	// Authenticated API Endpoints
 	// Note: Register specific paths *before* prefixes if they might overlap
@@ -114,6 +116,24 @@ func main() {
 	// Handle DELETE /api/podcasts/{id} using HandlePrefix
 	// The handler will need to check the method and extract the param from context
 	mux.HandlePrefix("DELETE", "/api/podcasts/", authMW(http.HandlerFunc(apiHandlers.HandleDeletePodcast)))
+
+	// API route to get play data for a specific podcast
+	mux.HandlePrefix("GET", "/api/podcasts/", authMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Basic sub-routing for /api/podcasts/{id}/play_data vs /api/podcasts/{id} (for GET details later)
+		path := r.URL.Path
+		if strings.HasSuffix(path, "/play_data") {
+			// Modify context to remove /play_data so GetPathParam gets the ID
+			paramVal := router.GetPathParam(r.Context()) // e.g., {id}/play_data
+			idOnly := strings.TrimSuffix(paramVal, "/play_data")
+			newCtx := context.WithValue(r.Context(), router.PathParamContextKey, idOnly)
+			apiHandlers.HandleGetPodcastPlayData(w, r.WithContext(newCtx))
+		} else if r.Method == http.MethodDelete { // If it's a DELETE to /api/podcasts/{id}
+			apiHandlers.HandleDeletePodcast(w, r)
+		} else {
+			// TODO: Add GET /api/podcasts/{id} to fetch single podcast details later (if needed)
+			http.NotFound(w, r)
+		}
+	})))
 
 	// Add other prefix routes if needed, e.g., for GET /api/podcasts/{id}
 	// mux.HandlePrefix("GET", "/api/podcasts/", authMW(http.HandlerFunc(apiHandlers.HandleGetPodcast))) // Example for later
@@ -139,6 +159,23 @@ func main() {
 			http.NotFound(w, r)
 		}
 	}))
+
+	// --- File Server for Media ---
+	// Serve files from the configured upload directory under the /media/ path
+	// Ensure cfg.Storage.UploadDir is set correctly in your config
+	uploadDir := cfg.Storage.UploadDir
+	if uploadDir == "" {
+		log.Println("Warning: cfg.Storage.UploadDir is not set. Media files may not serve.")
+	} else {
+		absUploadDir, err := filepath.Abs(uploadDir)
+		if err != nil {
+			log.Fatalf("Error getting absolute path for upload directory: %v", err)
+		}
+		log.Printf("Serving media files from %s under /media/", absUploadDir)
+		// http.StripPrefix is important to map /media/path/to/file.mp3 to fs.Open("path/to/file.mp3")
+		fileServer := http.FileServer(http.Dir(absUploadDir))
+		mux.HandlePrefix("GET", "/media/", http.StripPrefix("/media/", fileServer))
+	}
 
 	/*
 		// Root redirect

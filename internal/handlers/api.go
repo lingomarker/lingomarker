@@ -715,3 +715,90 @@ func (h *APIHandlers) HandleDeletePodcast(w http.ResponseWriter, r *http.Request
 	log.Printf("Podcast %s deleted successfully for user %d", podcastID, userID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Podcast deleted successfully"})
 }
+
+// HandleGetPodcastPlayData retrieves data for the podcast play page.
+func (h *APIHandlers) HandleGetPodcastPlayData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+		return
+	}
+	userID := r.Context().Value(UserIDContextKey).(int64)
+
+	// Get podcast ID from context using router helper (as defined in SimpleRouter)
+	podcastID := router.GetPathParam(r.Context())
+	if podcastID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Missing podcast ID in URL path")
+		return
+	}
+	if _, err := uuid.Parse(podcastID); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid podcast ID format")
+		return
+	}
+
+	podcast, err := h.DB.GetPodcastByIDForUser(userID, podcastID)
+	if err != nil {
+		log.Printf("API GetPodcastPlayData: Failed for user %d, podcast %s: %v", userID, podcastID, err)
+		if strings.Contains(err.Error(), "not found") {
+			writeJSONError(w, http.StatusNotFound, "Podcast not found or access denied.")
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "Failed to retrieve podcast data.")
+		}
+		return
+	}
+
+	// Ensure transcript is completed
+	if podcast.Status != models.StatusCompleted {
+		writeJSONError(w, http.StatusPreconditionFailed, fmt.Sprintf("Podcast transcription is not complete (status: %s).", podcast.Status))
+		return
+	}
+	if podcast.FinalTranscript == nil || *podcast.FinalTranscript == "" {
+		writeJSONError(w, http.StatusInternalServerError, "Podcast transcription is complete, but transcript data is missing.")
+		return
+	}
+
+	// We need to serve the audio file path relative to the domain, or provide a way for the client to fetch it.
+	// For now, let's make store_path relative from a 'media' root.
+	// Example: store_path might be "./uploads/1/uuid.mp3"
+	// We need to serve it via something like /media/1/uuid.mp3
+	// This requires a new file server route.
+
+	// Attempt to make storePath relative to a known base for web serving
+	// Assuming cfg.Storage.UploadDir is absolute or relative to server root
+	// And we want to serve files from a /media/ prefix
+	relativeStorePath, err := filepath.Rel(h.Cfg.Storage.UploadDir, podcast.StorePath)
+	if err != nil {
+		// If it can't be made relative (e.g., different drive), this approach needs rethinking.
+		// For now, just log it and use the full store path (which won't work directly in <audio src>)
+		log.Printf("Warning: Could not make store path %s relative to upload dir %s: %v", podcast.StorePath, h.Cfg.Storage.UploadDir, err)
+		// A more robust solution would involve generating a signed URL or a dedicated media serving endpoint.
+		// For now, we'll construct a path assuming a /media route will serve files from Cfg.Storage.UploadDir
+		// and the client will prefix this with the domain.
+		// This is a simplification for local dev.
+		relativeStorePath = strings.TrimPrefix(podcast.StorePath, h.Cfg.Storage.UploadDir) // A bit hacky
+		relativeStorePath = strings.TrimPrefix(relativeStorePath, "/")
+		relativeStorePath = strings.TrimPrefix(relativeStorePath, "\\")
+	}
+
+
+	// Parse the JSON transcript string into a Go slice of maps or structs
+	var transcriptData []map[string]interface{} // Or a more specific struct
+	if err := json.Unmarshal([]byte(*podcast.FinalTranscript), &transcriptData); err != nil {
+		log.Printf("API GetPodcastPlayData: Failed to parse FinalTranscript JSON for podcast %s: %v", podcastID, err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to parse transcript data.")
+		return
+	}
+
+
+	playData := map[string]interface{}{
+		"id":           podcast.ID,
+		"producer":     podcast.Producer,
+		"series":       podcast.Series,
+		"episode":      podcast.Episode,
+		"description":  podcast.Description,
+		"audioSrc":     "/media/" + relativeStorePath, // Client will prepend domain
+		"transcript":   transcriptData,
+		// Don't send original_transcript or full store_path unless needed by client directly
+	}
+
+	writeJSON(w, http.StatusOK, playData)
+}

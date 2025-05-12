@@ -1,17 +1,21 @@
 package handlers
 
 import (
+	"fmt"
 	"html/template"
 	"lingomarker/internal/auth"
 	"lingomarker/internal/config"
 	"lingomarker/internal/database"
 	"lingomarker/internal/models"
+	"lingomarker/internal/router"
 	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type WebHandlers struct {
@@ -360,4 +364,51 @@ func (h *WebHandlers) HandlePodcastListPage(w http.ResponseWriter, r *http.Reque
 		"User":  user,
 	}
 	h.renderTemplate(w, "podcast_list.html", data)
+}
+
+func (h *WebHandlers) HandlePodcastPlayPage(w http.ResponseWriter, r *http.Request) {
+	// AuthMiddleware ensures user is logged in
+	userID := r.Context().Value(UserIDContextKey).(int64)
+	user, err := h.DB.GetUserByID(userID) // To display username or for other checks
+	if err != nil || user == nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	// Get podcast ID from context using router helper
+	podcastID := router.GetPathParam(r.Context())
+	if podcastID == "" {
+		http.Error(w, "Missing podcast ID", http.StatusBadRequest)
+		return
+	}
+	if _, err := uuid.Parse(podcastID); err != nil {
+		http.Error(w, "Invalid podcast ID format", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch minimal data to ensure podcast exists and belongs to user, and is completed
+	// The full data including transcript will be fetched by client-side JS
+	podcast, err := h.DB.GetPodcastByIDForUser(userID, podcastID)
+	if err != nil {
+		log.Printf("Web HandlePodcastPlayPage: Error fetching podcast %s for user %d: %v", podcastID, userID, err)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, "Podcast not found or access denied.", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error retrieving podcast.", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if podcast.Status != models.StatusCompleted {
+		http.Error(w, fmt.Sprintf("Podcast transcription is not yet complete (Status: %s). Please wait.", podcast.Status), http.StatusPreconditionFailed)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Title":     fmt.Sprintf("Playing: %s - %s", podcast.Series, podcast.Episode),
+		"User":      user,
+		"PodcastID": podcastID, // Pass ID to the template for JS to use
+		"Podcast":   podcast,   // Pass basic metadata for initial display
+	}
+	h.renderTemplate(w, "podcast_play.html", data)
 }
