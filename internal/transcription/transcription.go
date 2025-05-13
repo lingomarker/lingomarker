@@ -55,14 +55,11 @@ func (s *Service) TranscribeAudioFile(ctx context.Context, audioFilePath, descri
 	}
 
 	parts := []*genai.Part{
-		genai.NewPartFromText(fmt.Sprintf(`Transcribe the following audio from a podcast episode.
+		genai.NewPartFromText(`Transcribe the provided audio from a podcast episode.
 		Generate the transcript in JSON format with speaker diarization and timestamps.
-		The timestamp field should clearly indicate the start and end of each paragraph in the format hh:mm:ss-hh:mm:ss, for example, 00:00:01-00:00:03.
-		Use the following podcast description for context: `+"```"+`%s`+"```"+`.
-		Use the following original transcript as a reference: `+"```"+`%s`+"```"+`.
-		The audio may contain advertisements that are typically not included in the original transcript.
-		Merge the ad sections (from the generated transcript) back into the original transcript, ensuring correct timestamps.
-		Format the final output as a JSON array of objects, where each object contains speaker, timestamp, and text.`, description, originalTranscript)),
+		The timestamp field should clearly indicate the start and end of each speaker's utterance in the format mm:ss-mm:ss, for example, 00:07-00:15.
+		Note that the speaker typically begins after some introductory silence, music or jingle, so please take this into account and do not start at zero time in this case.
+		Format the final output as a JSON array of objects, where each object contains speaker, timestamp, and text.`),
 		genai.NewPartFromURI(uploadedFile.URI, uploadedFile.MIMEType),
 	}
 	contents := []*genai.Content{
