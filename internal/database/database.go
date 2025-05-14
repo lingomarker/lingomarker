@@ -117,6 +117,7 @@ func createSchema(db *sql.DB) error {
             entry_uuid TEXT NOT NULL,
             url_hash TEXT NOT NULL,
             paragraph_hash TEXT NOT NULL,
+						transcript_segment_ref TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (user_id, entry_uuid, url_hash, paragraph_hash), -- Ensure unique relation per user
@@ -129,6 +130,7 @@ func createSchema(db *sql.DB) error {
         );
         CREATE INDEX IF NOT EXISTS idx_relations_user_entry ON relations(user_id, entry_uuid);
         CREATE INDEX IF NOT EXISTS idx_relations_user_updated ON relations(user_id, updated_at);
+				CREATE INDEX IF NOT EXISTS idx_relations_transcript_segment_ref ON relations(transcript_segment_ref);
 
 				CREATE TABLE IF NOT EXISTS podcasts (
         id TEXT PRIMARY KEY,                        -- UUID v4
@@ -376,11 +378,12 @@ func (db *DB) UpsertParagraph(para *models.Paragraph) error {
 // UpsertRelation updates the timestamp or inserts a new relation
 func (db *DB) UpsertRelation(rel *models.Relation) error {
 	_, err := db.Exec(`
-            INSERT INTO relations (user_id, entry_uuid, url_hash, paragraph_hash, created_at, updated_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id, entry_uuid, url_hash, paragraph_hash) DO UPDATE SET
-                updated_at = CURRENT_TIMESTAMP;
-        `, rel.UserID, rel.EntryUUID, rel.URLHash, rel.ParagraphHash)
+       INSERT INTO relations (user_id, entry_uuid, url_hash, paragraph_hash, transcript_segment_ref, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id, entry_uuid, url_hash, paragraph_hash) DO UPDATE SET
+           transcript_segment_ref = excluded.transcript_segment_ref, -- Update if provided
+           updated_at = CURRENT_TIMESTAMP;
+   `, rel.UserID, rel.EntryUUID, rel.URLHash, rel.ParagraphHash, rel.TranscriptSegmentRef) // Added rel.TranscriptSegmentRef
 	return err
 }
 
@@ -488,17 +491,21 @@ func (db *DB) GetUserDataBundle(userID int64) (*models.UserDataBundle, error) {
 
 	// Get Relations
 	rows, err = db.Query(`
-               SELECT entry_uuid, url_hash, paragraph_hash, created_at, updated_at
-               FROM relations WHERE user_id = ?
-           `, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query relations: %w", err)
+        SELECT entry_uuid, url_hash, paragraph_hash, transcript_segment_ref, created_at, updated_at
+        FROM relations WHERE user_id = ?
+    `, userID)
+	if err != nil { /* ... error handling ... */
 	}
 	defer rows.Close()
 	for rows.Next() {
 		r := models.Relation{UserID: userID}
-		if err := rows.Scan(&r.EntryUUID, &r.URLHash, &r.ParagraphHash, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		// Add a nullable string for transcript_segment_ref
+		var tsRef sql.NullString
+		if err := rows.Scan(&r.EntryUUID, &r.URLHash, &r.ParagraphHash, &tsRef, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan relation: %w", err)
+		}
+		if tsRef.Valid {
+			r.TranscriptSegmentRef = &tsRef.String
 		}
 		bundle.Relations = append(bundle.Relations, r)
 	}

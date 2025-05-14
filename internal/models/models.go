@@ -48,13 +48,14 @@ type Paragraph struct {
 
 // Relation connects Entry, URL, and Paragraph for a specific user interaction
 type Relation struct {
-	ID            int64     `json:"-"` // Internal ID
-	UserID        int64     `json:"-"`
-	EntryUUID     string    `json:"entryUUID"`
-	URLHash       string    `json:"urlHash"`
-	ParagraphHash string    `json:"paragraphHash"`
-	CreatedAt     time.Time `json:"createdAt"` // When first created
-	UpdatedAt     time.Time `json:"updatedAt"` // Timestamp of the last interaction (re-click)
+	ID                   int64     `json:"-"` // Internal ID
+	UserID               int64     `json:"-"`
+	EntryUUID            string    `json:"entryUUID"`
+	URLHash              string    `json:"urlHash"`
+	ParagraphHash        string    `json:"paragraphHash"`
+	TranscriptSegmentRef *string   `json:"transcriptSegmentRef,omitempty"` // Nullable
+	CreatedAt            time.Time `json:"createdAt"`                      // When first created
+	UpdatedAt            time.Time `json:"updatedAt"`                      // Timestamp of the last interaction (re-click)
 }
 
 // Structure for returning all data needed by UserScript

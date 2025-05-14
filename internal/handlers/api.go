@@ -96,20 +96,22 @@ func (h *APIHandlers) HandleGetData(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bundle)
 }
 
+type MarkWordRequest struct {
+	Word                 string  `json:"word"`
+	URL                  string  `json:"url"`
+	Title                *string `json:"title"`
+	ParagraphText        string  `json:"paragraphText"`
+	URLHash              string  `json:"urlHash"`                        // Pre-calculated by UserScript
+	ParagraphHash        string  `json:"paragraphHash"`                  // Pre-calculated by UserScript
+	EntryUUID            *string `json:"entryUUID"`                      // Optional: UUID if word already exists client-side
+	TranscriptSegmentRef *string `json:"transcriptSegmentRef,omitempty"` // Optional
+}
+
 // HandleMarkWord handles adding/updating a word selection
 func (h *APIHandlers) HandleMarkWord(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(UserIDContextKey).(int64)
+	var req MarkWordRequest
 
-	// 1. Decode Request Body
-	var req struct {
-		Word          string  `json:"word"` // The selected word (lowercase)
-		URL           string  `json:"url"`
-		Title         *string `json:"title"`
-		ParagraphText string  `json:"paragraphText"`
-		URLHash       string  `json:"urlHash"`       // Pre-calculated by UserScript
-		ParagraphHash string  `json:"paragraphHash"` // Pre-calculated by UserScript
-		EntryUUID     *string `json:"entryUUID"`     // Optional: UUID if word already exists client-side
-	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
@@ -237,10 +239,11 @@ func (h *APIHandlers) HandleMarkWord(w http.ResponseWriter, r *http.Request) {
 
 	// 5. Upsert Relation (always update timestamp)
 	relation := &models.Relation{
-		UserID:        userID,
-		EntryUUID:     entryUUID,
-		URLHash:       req.URLHash,
-		ParagraphHash: req.ParagraphHash,
+		UserID:               userID,
+		EntryUUID:            entryUUID,
+		URLHash:              req.URLHash,
+		ParagraphHash:        req.ParagraphHash,
+		TranscriptSegmentRef: req.TranscriptSegmentRef,
 		// CreatedAt/UpdatedAt handled by DB trigger/logic
 	}
 	if err := h.DB.UpsertRelation(relation); err != nil { // UpsertRelation uses its own connection logic

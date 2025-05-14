@@ -157,6 +157,7 @@
         const { start, end } = getSegmentTimes(segment.timestamp);
         segmentDiv.dataset.startTime = start;
         segmentDiv.dataset.endTime = end;
+        segmentDiv.dataset.timestamp = segment.timestamp;
 
         const speakerSpan = document.createElement('span');
         speakerSpan.classList.add('speaker');
