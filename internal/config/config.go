@@ -34,6 +34,9 @@ type Config struct {
 	Storage struct {
 		UploadDir string `yaml:"upload_dir"`
 	} `yaml:"storage"`
+	ReviewPage struct {
+		ItemsLimit int `yaml:"items_limit"`
+	} `yaml:"review_page"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -84,6 +87,11 @@ func LoadConfig(path string) (*Config, error) {
 			UploadDir string `yaml:"upload_dir"`
 		}{
 			UploadDir: "./uploads", // Default upload directory
+		},
+		ReviewPage: struct {
+			ItemsLimit int `yaml:"items_limit"`
+		}{
+			ItemsLimit: 50, // Default number of sources on review page
 		},
 	}
 

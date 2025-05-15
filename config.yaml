@@ -8,6 +8,8 @@ session:
   secret_key: "a-better-secret-key-for-development-but-still-not-prod" # Change this!
 storage:
   upload_dir: ./uploads
+review_page:
+  items_limit: 30  
 
 # web: # Use defaults
 # gemini: # Use defaults

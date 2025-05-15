@@ -915,3 +915,211 @@ func (db *DB) GetPodcastByIDForUser(userID int64, podcastID string) (*models.Pod
 
 	return p, nil
 }
+
+type Timestamp time.Time
+
+func (p *Timestamp) Scan(value any) error {
+	// t := value.(time.Time)
+	t, err := time.Parse("2006-01-02 15:04:05", value.(string))
+	if err != nil {
+		log.Printf("Error converting string '%s' "+"to time.Time: %v", value, err)
+		t = time.Time{} // Default to zero time on error
+	}
+	*p = Timestamp(t)
+	return nil
+}
+
+// GetReviewPageData fetches data structured for the review page.
+// It gets distinct sources (articles or podcasts) based on recent interactions,
+// then fetches all related paragraphs for those sources.
+func (db *DB) GetReviewPageData(userID int64, limit int) ([]models.ReviewSource, error) {
+	if limit <= 0 {
+		limit = 50 // Default limit
+	}
+
+	// Step 1: Get the most recent distinct sources (url_hash for articles, podcast_id for podcasts)
+	// We need to identify if a url_hash is an article or points to a podcast.
+	// For now, we'll assume url_hash either directly maps to an article URL
+	// or contains a specific prefix/pattern if it's a podcast (e.g., "podcast:<podcast_id>").
+	// Let's simplify for now: url_hash from 'relations' is the key.
+	// The 'urls' table gives us the actual URL and title for articles.
+	// For podcasts, we'll need to join with the 'podcasts' table if url_hash in relations refers to a podcast ID.
+
+	// This query aims to get distinct url_hashes from relations, ordered by most recent interaction.
+	// It also fetches necessary info from urls or podcasts table based on what url_hash represents.
+	// This query becomes complex because url_hash in 'relations' can point to an article URL (via 'urls' table)
+	// OR it could conceptually point to a podcast (though current 'relations' table only has url_hash).
+	//
+	// Let's refine the strategy:
+	// The 'relations' table has 'url_hash'.
+	// If this url_hash exists in the 'urls' table, it's an article.
+	// If this url_hash corresponds to a podcast's ID (or a hash derived from its play page), it's a podcast.
+	//
+	// For simplicity in this query, let's assume:
+	// 1. For articles, `relations.url_hash` matches `urls.url_hash`.
+	// 2. For podcasts, we need a way to link `relations.url_hash` to `podcasts.id`.
+	//    Currently, when marking a word on podcast_play page, the `url` sent to /api/mark is
+	//    the podcast_play page URL (e.g., /podcasts/play/uuid). Its hash is stored in `relations.url_hash`.
+	//    We can parse the podcast_id from this `context.url` when UserScript sends it.
+	//    So, `relations.url_hash` *for podcasts* will be the hash of `DOMAIN/podcasts/play/PODCAST_ID`.
+
+	// Step 1: Fetch the 'limit' most recently interacted-with unique 'url_hash' values from relations.
+	// And get their max(updated_at) to sort them.
+	sourceQuery := `
+        SELECT
+            r.url_hash,
+            MAX(r.updated_at) as max_updated_at,
+            u.url as article_url,
+            u.title as article_title,
+            -- Attempt to extract podcast_id if url_hash refers to a podcast play page
+            -- This is a heuristic and depends on the URL structure used when marking.
+            -- Assuming URL for podcast marking context is like 'https://domain/podcasts/play/PODCAST_UUID'
+            -- We'd hash that. To get the ID back, we'd need the original URL from 'urls' table.
+            -- Let's assume for podcasts, the 'urls' table stores the 'DOMAIN/podcasts/play/PODCAST_ID'
+            -- And the 'title' field in 'urls' for a podcast might store "Producer: Series - Episode"
+            p.id as podcast_id,
+            p.producer as podcast_producer,
+            p.series as podcast_series,
+            p.episode as podcast_episode
+        FROM relations r
+        LEFT JOIN urls u ON r.user_id = u.user_id AND r.url_hash = u.url_hash -- For articles AND podcast play pages
+        LEFT JOIN podcasts p ON u.user_id = p.user_id AND INSTR(u.url, p.id) > 0 -- Heuristic: podcast_id is in url
+        WHERE r.user_id = ?
+        GROUP BY r.url_hash
+        ORDER BY max_updated_at DESC
+        LIMIT ?;
+    `
+	// The INSTR(u.url, p.id) > 0 is a heuristic. A better way would be if `urls.url` for podcasts
+	// was consistently `/podcasts/play/{podcast_id}` and we parse it, or add a `podcast_id_fk` to `urls`.
+	// For now, this is a simplification.
+
+	rows, err := db.Query(sourceQuery, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query distinct sources for review page (user %d): %w", userID, err)
+	}
+	defer rows.Close()
+
+	var reviewSources []models.ReviewSource
+	sourceParagraphsMap := make(map[string][]models.ReviewParagraph) // url_hash -> []ReviewParagraph
+
+	type rawSourceData struct {
+		URLHash         string
+		MaxUpdatedAt    Timestamp
+		ArticleURL      sql.NullString
+		ArticleTitle    sql.NullString
+		PodcastID       sql.NullString
+		PodcastProducer sql.NullString
+		PodcastSeries   sql.NullString
+		PodcastEpisode  sql.NullString
+	}
+	var rawSources []rawSourceData
+
+	for rows.Next() {
+		var rs rawSourceData
+		if err := rows.Scan(
+			&rs.URLHash, &rs.MaxUpdatedAt,
+			&rs.ArticleURL, &rs.ArticleTitle,
+			&rs.PodcastID, &rs.PodcastProducer, &rs.PodcastSeries, &rs.PodcastEpisode,
+		); err != nil {
+			log.Printf("Error scanning review source row for user %d: %v", userID, err)
+			continue
+		}
+		rawSources = append(rawSources, rs)
+
+		// Initialize paragraph slice for this source
+		sourceParagraphsMap[rs.URLHash] = make([]models.ReviewParagraph, 0)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating review source rows for user %d: %w", userID, err)
+	}
+	rows.Close() // Close rows before next query
+
+	if len(rawSources) == 0 {
+		return reviewSources, nil // No sources found
+	}
+
+	// Step 2: For each of these sources, fetch all their associated paragraphs and relations.
+	// Construct IN clause for url_hashes
+	urlHashes := make([]interface{}, len(rawSources)+1) // +1 for userID
+	urlHashes[0] = userID
+	for i, rs := range rawSources {
+		urlHashes[i+1] = rs.URLHash
+	}
+	placeholders := strings.Repeat("?,", len(rawSources)-1) + "?"
+
+	paragraphQuery := fmt.Sprintf(`
+        SELECT
+            r.url_hash,
+            p.text as paragraph_text,
+            p.paragraph_hash,
+            r.transcript_segment_ref,
+            -- Determine if it's a podcast segment (heuristic: transcript_segment_ref is not null)
+            CASE WHEN r.transcript_segment_ref IS NOT NULL AND r.transcript_segment_ref != '' THEN 1 ELSE 0 END as is_podcast_segment
+        FROM relations r
+        JOIN paragraphs p ON r.user_id = p.user_id AND r.paragraph_hash = p.paragraph_hash
+        WHERE r.user_id = ? AND r.url_hash IN (%s)
+        ORDER BY r.url_hash, r.updated_at DESC -- Order paragraphs by recency within each source (optional);
+    `, placeholders)
+
+	paraRows, err := db.Query(paragraphQuery, urlHashes...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query paragraphs for review page (user %d): %w", userID, err)
+	}
+	defer paraRows.Close()
+
+	for paraRows.Next() {
+		var urlHash, paragraphText, paragraphHash string
+		var transcriptSegmentRef sql.NullString
+		var isPodcastSegment bool
+		if err := paraRows.Scan(&urlHash, &paragraphText, &paragraphHash, &transcriptSegmentRef, &isPodcastSegment); err != nil {
+			log.Printf("Error scanning review paragraph row for user %d: %v", userID, err)
+			continue
+		}
+
+		rp := models.ReviewParagraph{
+			Text:             paragraphText,
+			ParagraphHash:    paragraphHash,
+			IsPodcastSegment: isPodcastSegment,
+		}
+		if transcriptSegmentRef.Valid {
+			rp.TranscriptSegmentRef = &transcriptSegmentRef.String
+		}
+		sourceParagraphsMap[urlHash] = append(sourceParagraphsMap[urlHash], rp)
+	}
+	if err = paraRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating review paragraph rows for user %d: %w", userID, err)
+	}
+
+	// Step 3: Assemble the final ReviewSource structs
+	for _, rsData := range rawSources {
+		source := models.ReviewSource{
+			SourceID:              rsData.URLHash, // For articles, this is the url_hash. For podcasts, it's also the url_hash of the play page.
+			MostRecentInteraction: time.Time(rsData.MaxUpdatedAt),
+			Paragraphs:            sourceParagraphsMap[rsData.URLHash],
+		}
+
+		if rsData.PodcastID.Valid && rsData.PodcastID.String != "" {
+			source.SourceType = "podcast"
+			source.SourceTitle = fmt.Sprintf("%s: %s - %s", rsData.PodcastProducer.String, rsData.PodcastSeries.String, rsData.PodcastEpisode.String)
+			source.SourceLink = fmt.Sprintf("/podcasts/play/%s", rsData.PodcastID.String) // Link to internal play page
+			// The SourceID for podcasts could also be set to rsData.PodcastID.String for clarity client-side
+		} else if rsData.ArticleURL.Valid {
+			source.SourceType = "article"
+			if rsData.ArticleTitle.Valid && rsData.ArticleTitle.String != "" {
+				source.SourceTitle = rsData.ArticleTitle.String
+			} else {
+				source.SourceTitle = rsData.ArticleURL.String // Fallback to URL if no title
+			}
+			source.SourceLink = rsData.ArticleURL.String // Link to original article
+		} else {
+			// This case shouldn't happen if relations always have a corresponding URL entry
+			log.Printf("Warning: Review source with url_hash %s has no matching article or podcast info.", rsData.URLHash)
+			source.SourceType = "unknown"
+			source.SourceTitle = "Unknown Source"
+			source.SourceLink = "#"
+		}
+		reviewSources = append(reviewSources, source)
+	}
+
+	return reviewSources, nil
+}

@@ -412,3 +412,19 @@ func (h *WebHandlers) HandlePodcastPlayPage(w http.ResponseWriter, r *http.Reque
 	}
 	h.renderTemplate(w, "podcast_play.html", data)
 }
+
+func (h *WebHandlers) HandleReviewPage(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(UserIDContextKey).(int64)
+	user, err := h.DB.GetUserByID(userID)
+	if err != nil || user == nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Title": "Review Marked Words",
+		"User":  user,
+		// Data will be fetched by client-side JS
+	}
+	h.renderTemplate(w, "review.html", data)
+}

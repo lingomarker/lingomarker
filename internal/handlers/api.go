@@ -809,3 +809,27 @@ func (h *APIHandlers) HandleGetPodcastPlayData(w http.ResponseWriter, r *http.Re
 
 	writeJSON(w, http.StatusOK, playData)
 }
+
+func (h *APIHandlers) HandleGetReviewData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+		return
+	}
+	userID := r.Context().Value(UserIDContextKey).(int64)
+
+	// Get limit from config (or query param if you want to override)
+	limit := h.Cfg.ReviewPage.ItemsLimit
+
+	reviewData, err := h.DB.GetReviewPageData(userID, limit)
+	if err != nil {
+		log.Printf("API GetReviewData: Failed for user %d: %v", userID, err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to retrieve review data")
+		return
+	}
+
+	if reviewData == nil {
+		reviewData = make([]models.ReviewSource, 0) // Return empty array, not null
+	}
+
+	writeJSON(w, http.StatusOK, reviewData)
+}

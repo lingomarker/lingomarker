@@ -110,3 +110,22 @@ type PodcastListItem struct {
 	UploadTime time.Time     `json:"uploadTime"`
 	Status     PodcastStatus `json:"status"`
 }
+
+// ReviewParagraph represents a paragraph shown on the review page.
+type ReviewParagraph struct {
+	Text                 string  `json:"text"`
+	ParagraphHash        string  `json:"paragraphHash"`                  // To identify the paragraph
+	IsPodcastSegment     bool    `json:"isPodcastSegment"`               // True if this came from a podcast transcript segment
+	TranscriptSegmentRef *string `json:"transcriptSegmentRef,omitempty"` // For deep-linking to podcast player
+	// We could add the original word that caused this paragraph to be included if needed
+}
+
+// ReviewSource represents a single content source (article or podcast) on the review page.
+type ReviewSource struct {
+	SourceID              string            `json:"sourceId"`              // URLHash for articles, PodcastID for podcasts
+	SourceType            string            `json:"sourceType"`            // "article" or "podcast"
+	SourceTitle           string            `json:"sourceTitle"`           // Article title or "Producer: Series - Episode"
+	SourceLink            string            `json:"sourceLink"`            // Original article URL or /podcasts/play/{id}
+	MostRecentInteraction time.Time         `json:"mostRecentInteraction"` // Max updated_at from relations for this source
+	Paragraphs            []ReviewParagraph `json:"paragraphs"`
+}

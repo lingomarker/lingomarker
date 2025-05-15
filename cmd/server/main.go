@@ -103,6 +103,7 @@ func main() {
 	mux.Handle("GET", "/podcasts/upload", authMW(http.HandlerFunc(webHandlers.HandlePodcastUploadPage)))
 	mux.Handle("GET", "/podcasts", authMW(http.HandlerFunc(webHandlers.HandlePodcastListPage)))
 	mux.HandlePrefix("GET", "/podcasts/play/", authMW(http.HandlerFunc(webHandlers.HandlePodcastPlayPage)))
+	mux.Handle("GET", "/review", authMW(http.HandlerFunc(webHandlers.HandleReviewPage)))
 
 	// Authenticated API Endpoints
 	// Note: Register specific paths *before* prefixes if they might overlap
@@ -111,6 +112,7 @@ func main() {
 	mux.Handle("POST", "/api/mark", authMW(http.HandlerFunc(apiHandlers.HandleMarkWord)))
 	mux.Handle("GET", "/api/training/data", authMW(http.HandlerFunc(apiHandlers.HandleGetTrainingData)))
 	mux.Handle("POST", "/api/import", authMW(http.HandlerFunc(apiHandlers.HandleImportData)))
+	mux.Handle("GET", "/api/review", authMW(http.HandlerFunc(apiHandlers.HandleGetReviewData)))
 
 	// Podcast API routes
 	mux.Handle("POST", "/api/podcasts", authMW(http.HandlerFunc(apiHandlers.HandlePodcastUpload)))
