@@ -669,7 +669,7 @@
 
         // Fallback to window location
         let url = window.location.href;
-        // Special handling for training page? Not needed now backend serves it.
+        // Special handling for review page? Not needed now backend serves it.
         return url;
     }
 
@@ -1039,8 +1039,8 @@
 
     function registerMenuCommands() {
         GM_registerMenuCommand("Reload LingoMarker Data", fetchUserDataAndHighlight);
-        GM_registerMenuCommand("Go to Training Page", () => {
-            GM_openInTab(BACKEND_URL + '/training', { active: true });
+        GM_registerMenuCommand("Go to Review Page", () => {
+            GM_openInTab(BACKEND_URL + '/review', { active: true });
         });
         GM_registerMenuCommand("Go to Settings", () => {
             GM_openInTab(BACKEND_URL + '/settings', { active: true });
