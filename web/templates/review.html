@@ -121,7 +121,9 @@
         sourceDiv.classList.add('review-source');
 
         const titleHeader = document.createElement('h3');
+        titleHeader.className = 'review-source-title'
         const titleLink = document.createElement('a');
+        titleLink.classList.add('review-source-link');
         titleLink.href = source.sourceLink;
         titleLink.textContent = source.sourceTitle || 'Unknown Source';
         titleLink.target = '_blank'; // Open external links in new tab

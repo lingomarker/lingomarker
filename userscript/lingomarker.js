@@ -655,6 +655,13 @@
         // Find the nearest parent A tag with an href, or use window.location
         let current = node;
         while (current && current !== document.body) {
+            if (current.nodeName === 'H3' && current.className === 'review-source-title') {
+                const child = current.firstChild;
+                if (child.nodeName === 'A' && child.href && child.className === 'review-source-link') {
+                    // Special handling for review page
+                    return child.href;
+                }
+            }
             if (current.nodeName === 'A' && current.href) {
                 // Check if it's an internal page link
                 if (current.href.startsWith(window.location.origin + '/#')) {
@@ -664,12 +671,15 @@
                     return current.href;
                 }
             }
-            current = current.parentNode;
+            if (current.nodeName === 'P' && current.className === 'review-paragraph') {
+                current = current.previousElementSibling;
+            } else {
+                current = current.parentNode;
+            }
         }
 
         // Fallback to window location
         let url = window.location.href;
-        // Special handling for review page? Not needed now backend serves it.
         return url;
     }
 
