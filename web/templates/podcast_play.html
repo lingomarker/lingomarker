@@ -85,79 +85,68 @@
   <p style="margin-top: 2em;"><a href="/podcasts">Back to Podcast List</a></p>
 
   <script>
-    const podcastId = "{{ .PodcastID }}"; // Get ID from Go template
+    const podcastId = "{{ .PodcastID }}";
     const audioPlayer = document.getElementById('podcast-player');
     const transcriptContainer = document.getElementById('transcript-container');
-    let transcriptData = []; // To store parsed transcript segments
-    let currentPlayingSegment = null; // To track the paragraph playing due to click
+    let transcriptData = [];
+    let currentPlayingSegment = null;
     let lastHighlightedElement = null;
+    let initialHashTarget = null; // To store the target from the URL hash
 
     // --- Helper to parse "HH:MM:SS" OR "MM:SS" to seconds ---
+    // (parseTimestampToSeconds and getSegmentTimes functions remain as corrected in the previous step)
     function parseTimestampToSeconds(timeStr) {
       if (!timeStr) return 0;
-      const parts = String(timeStr).trim().split(':'); // Ensure it's a string, trim, split
+      const parts = String(timeStr).trim().split(':');
       let seconds = 0;
       try {
-        if (parts.length === 3) { // HH:MM:SS format
+        if (parts.length === 3) {
           seconds = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
-        } else if (parts.length === 2) { // MM:SS format
+        } else if (parts.length === 2) {
           seconds = parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
-        } else if (parts.length === 1) { // Assume seconds only
+        } else if (parts.length === 1) {
           seconds = parseFloat(parts[0]);
         }
-        // Add handling for potential decimal points in seconds if needed, parseFloat handles this.
       } catch (e) {
         console.error("Error parsing time string:", timeStr, e);
-        return 0; // Return 0 on parsing error
+        return 0;
       }
-      // Return 0 if result is NaN (e.g., parsing failed)
       return isNaN(seconds) ? 0 : seconds;
     }
 
-    // --- Helper to get start/end seconds from "start-end" timestamp string ---
     function getSegmentTimes(timestampStr) {
-      // Default to 0 start, effectively infinite end if parsing fails badly
       const defaultTimes = { start: 0, end: Infinity };
       if (!timestampStr || typeof timestampStr !== 'string') return defaultTimes;
-
       const times = timestampStr.split('-');
       if (times.length === 0) return defaultTimes;
-
-      const start = parseTimestampToSeconds(times[0]); // Uses updated parser
-
-      // Default end time is Infinity unless specified otherwise
+      const start = parseTimestampToSeconds(times[0]);
       let end = Infinity;
       if (times.length > 1 && times[1].trim() !== "") {
-        end = parseTimestampToSeconds(times[1]); // Uses updated parser
+        end = parseTimestampToSeconds(times[1]);
       }
-
-      // Sanity check: Ensure end is >= start if both are finite numbers
       if (isFinite(start) && isFinite(end) && end < start) {
         console.warn(`Timestamp parse warning: End time (${times[1]} -> ${end}s) is before start time (${times[0]} -> ${start}s). Setting end to start time.`);
-        end = start; // Set end equal to start if end is earlier
+        end = start;
       }
-
-      // Handle case where end might still be calculated as 0 incorrectly but start is > 0
       if (isFinite(start) && start > 0 && end === 0 && times.length > 1) {
         console.warn(`Timestamp parse warning: End time parsed as 0 (${times[1]}) while start time (${times[0]}) is positive. Using Infinity for end time.`);
-        end = Infinity; // Treat as unbounded if end parsing seems wrong
+        end = Infinity;
       }
-
-
       return { start, end };
     }
 
+
     // --- Render Transcript ---
     function renderTranscript(segments) {
-      transcriptContainer.innerHTML = ''; // Clear loading message
+      transcriptContainer.innerHTML = '';
       segments.forEach((segment, index) => {
         const segmentDiv = document.createElement('div');
         segmentDiv.classList.add('transcript-segment');
-        segmentDiv.dataset.index = index; // For easy lookup
+        segmentDiv.dataset.index = index;
         const { start, end } = getSegmentTimes(segment.timestamp);
         segmentDiv.dataset.startTime = start;
         segmentDiv.dataset.endTime = end;
-        segmentDiv.dataset.timestamp = segment.timestamp;
+        segmentDiv.dataset.timestamp = segment.timestamp; // Keep original timestamp string
 
         const speakerSpan = document.createElement('span');
         speakerSpan.classList.add('speaker');
@@ -171,10 +160,66 @@
         segmentDiv.appendChild(textP);
         transcriptContainer.appendChild(segmentDiv);
       });
+
+      // --- After rendering, try to scroll to and highlight the target segment ---
+      if (initialHashTarget) {
+        scrollToAndHighlightSegment(initialHashTarget);
+        initialHashTarget = null; // Clear it after use
+      }
     }
+
+    // --- New function to handle deep linking and highlighting ---
+    function scrollToAndHighlightSegment(targetTimestamp) {
+      let targetSegmentElement = null;
+      const segments = transcriptContainer.querySelectorAll('.transcript-segment');
+      for (const segmentEl of segments) {
+        if (segmentEl.dataset.timestamp === targetTimestamp) {
+          targetSegmentElement = segmentEl;
+          break;
+        }
+      }
+
+      if (targetSegmentElement) {
+        console.log("Found target segment for deep link:", targetSegmentElement);
+        targetSegmentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Brief highlight (different from 'playing' highlight)
+        targetSegmentElement.style.transition = 'background-color 0.3s ease-out';
+        targetSegmentElement.style.backgroundColor = '#ffe0b2'; // A distinct temporary highlight color (e.g., light orange)
+        setTimeout(() => {
+          // Remove temporary highlight, revert to normal or 'playing' if audio starts
+          if (!targetSegmentElement.classList.contains('playing')) {
+            targetSegmentElement.style.backgroundColor = ''; // Revert to default
+          } else {
+            targetSegmentElement.style.backgroundColor = ''; // It will get #d0e0ff from 'playing' class
+            // Or directly set to the 'playing' color if needed, but class should handle it
+          }
+        }, 2000); // Highlight for 2 seconds
+
+        // Optional: Set audio player's current time to this segment's start, but DO NOT auto-play
+        // const startTime = parseFloat(targetSegmentElement.dataset.startTime);
+        // if (!isNaN(startTime)) {
+        //     audioPlayer.currentTime = startTime;
+        // }
+      } else {
+        console.warn("Deep link target segment not found for timestamp:", targetTimestamp);
+      }
+    }
+
 
     // --- Fetch Play Data ---
     async function fetchPlayData() {
+      // --- Check for URL Hash before fetching ---
+      if (window.location.hash) {
+        const hash = window.location.hash.substring(1); // Remove #
+        const params = new URLSearchParams(hash);
+        if (params.has('segment_timestamp')) {
+          initialHashTarget = params.get('segment_timestamp');
+          console.log("Initial hash target timestamp:", initialHashTarget);
+        }
+      }
+      // --- End Check URL Hash ---
+
       try {
         const response = await fetch(`/api/podcasts/${podcastId}/play_data`);
         if (!response.ok) {
@@ -182,14 +227,10 @@
           throw new Error(errData.error || `Failed to load podcast data: ${response.status}`);
         }
         const data = await response.json();
-
-        // Set audio source
-        audioPlayer.src = data.audioSrc; // Assumes domain is the same, or /media/ is correctly routed
-
-        // Store and render transcript
+        audioPlayer.src = data.audioSrc;
         transcriptData = data.transcript || [];
         if (transcriptData.length > 0) {
-          renderTranscript(transcriptData);
+          renderTranscript(transcriptData); // This will now also try to handle initialHashTarget
         } else {
           transcriptContainer.innerHTML = '<p class="loading-message">No transcript available.</p>';
         }
@@ -200,50 +241,57 @@
       }
     }
 
-    // --- Audio-to-Text Sync ---
+    // --- Audio-to-Text Sync (timeupdate event listener) ---
     audioPlayer.addEventListener('timeupdate', () => {
       const currentTime = audioPlayer.currentTime;
-      let activeSegment = null;
+      let activeSegmentElement = null; // Changed variable name for clarity
 
-      for (let i = 0; i < transcriptData.length; i++) {
-        const segmentElement = transcriptContainer.querySelector(`.transcript-segment[data-index="${i}"]`);
-        if (!segmentElement) continue;
-
-        const startTime = parseFloat(segmentElement.dataset.startTime);
-        const endTime = parseFloat(segmentElement.dataset.endTime);
+      // Iterate over rendered segment elements
+      const segmentElements = transcriptContainer.querySelectorAll('.transcript-segment');
+      for (const segmentEl of segmentElements) {
+        const startTime = parseFloat(segmentEl.dataset.startTime);
+        const endTime = parseFloat(segmentEl.dataset.endTime);
 
         if (currentTime >= startTime && currentTime < endTime) {
-          activeSegment = segmentElement;
+          activeSegmentElement = segmentEl;
           break;
         }
       }
 
-      // Remove highlight from previously highlighted element
-      if (lastHighlightedElement && lastHighlightedElement !== activeSegment) {
+      if (lastHighlightedElement && lastHighlightedElement !== activeSegmentElement) {
         lastHighlightedElement.classList.remove('playing');
       }
 
-      // Add highlight to current active segment
-      if (activeSegment) {
-        if (!activeSegment.classList.contains('playing')) {
-          activeSegment.classList.add('playing');
-          activeSegment.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      if (activeSegmentElement) {
+        if (!activeSegmentElement.classList.contains('playing')) {
+          activeSegmentElement.classList.add('playing');
+          // Scroll into view only if it's not the one we just deep-linked to (to avoid jerky scroll)
+          // or if it's significantly out of view.
+          // For simplicity now, always scroll.
+          activeSegmentElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
         }
-        lastHighlightedElement = activeSegment;
+        lastHighlightedElement = activeSegmentElement;
+      } else if (lastHighlightedElement) { // No active segment, but there was one
+        lastHighlightedElement.classList.remove('playing');
+        lastHighlightedElement = null;
       }
 
-      // Stop playback if currentPlayingSegment's end time is reached
+
       if (currentPlayingSegment) {
         const currentSegmentEndTime = parseFloat(currentPlayingSegment.dataset.endTime);
         if (currentTime >= currentSegmentEndTime) {
           audioPlayer.pause();
-          currentPlayingSegment = null; // Reset
-          if (lastHighlightedElement) lastHighlightedElement.classList.remove('playing'); // Clear highlight
+          if (lastHighlightedElement && currentPlayingSegment === lastHighlightedElement) {
+            // Only remove 'playing' if it's the segment that was clicked and just finished
+            lastHighlightedElement.classList.remove('playing');
+          }
+          currentPlayingSegment = null;
+          // lastHighlightedElement = null; // Don't nullify if audio is still playing near another segment
         }
       }
     });
 
-    // --- Text-to-Audio Sync ---
+    // --- Text-to-Audio Sync (click event listener on transcriptContainer) ---
     transcriptContainer.addEventListener('click', (event) => {
       const segmentElement = event.target.closest('.transcript-segment');
       if (segmentElement) {
@@ -251,8 +299,17 @@
         if (!isNaN(startTime)) {
           audioPlayer.currentTime = startTime;
           audioPlayer.play();
-          currentPlayingSegment = segmentElement; // Set the segment that was clicked
-          // Highlighting will be handled by timeupdate
+          currentPlayingSegment = segmentElement;
+
+          // Ensure only the clicked segment gets the 'playing' class immediately if needed,
+          // 'timeupdate' will also handle it but this can make it more responsive.
+          if (lastHighlightedElement) {
+            lastHighlightedElement.classList.remove('playing');
+          }
+          segmentElement.classList.add('playing');
+          lastHighlightedElement = segmentElement;
+          // Scroll it into view
+          segmentElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
         }
       }
     });
