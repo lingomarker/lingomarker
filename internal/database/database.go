@@ -1017,7 +1017,7 @@ func (db *DB) GetReviewPageData(userID int64, limit int) ([]models.ReviewSource,
         LEFT JOIN podcasts pod ON u.user_id = pod.user_id AND INSTR(u.url, pod.id) > 0 -- Heuristic
         WHERE r.user_id = ? AND r.url_hash IN (%s)
         GROUP BY r.url_hash, r.paragraph_hash -- This ensures distinct paragraphs per source
-        ORDER BY r.url_hash, MIN(p_text.id) -- Attempt to maintain paragraph original order if possible (by paragraph ID)
+        ORDER BY r.url_hash, MAX(r.updated_at) DESC -- MIN(p_text.id) -- Attempt to maintain paragraph original order if possible (by paragraph ID)
                                           -- Or use MAX(r.updated_at) here to sort paragraphs by recent interaction
         ;																					
     `, placeholders)

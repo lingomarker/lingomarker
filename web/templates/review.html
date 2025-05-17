@@ -145,10 +145,12 @@
             if (para.isPodcastSegment && para.transcriptSegmentRef) {
               const iconLink = document.createElement('a');
               iconLink.classList.add('goto-segment-icon');
-              iconLink.innerHTML = '▶︎'; // Play icon (play button emoji)
               iconLink.title = 'Go to segment in podcast';
               iconLink.href = `${source.sourceLink}#segment_timestamp=${encodeURIComponent(para.transcriptSegmentRef)}`;
               // Don't set target="_blank" for internal navigation
+              const icon = document.createElement('i');
+              icon.classList.add('fa', 'fa-play'); // Play icon class
+              iconLink.appendChild(icon);
               paraDiv.appendChild(iconLink);
             }
             sourceDiv.appendChild(paraDiv);
