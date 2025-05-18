@@ -2,9 +2,35 @@
 <html lang="en">
 {{ template "head.html" . }}
 
+<head>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .top-bar {
+      display: flex;
+      padding: 10px;
+      background-color: #f0f0f0;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      gap: 10px;
+      align-items: center;
+    }
+  </style>
+</head>
+
 <body>
   <h1>My Podcasts</h1>
-  <p><a href="/podcasts/upload">Upload New Podcast</a></p>
+
+  <div class="top-bar">
+    <p><a href="/podcasts/upload">Upload New Podcast</a></p>
+    <p><a href="/review">Review</a></p>
+  </div>
 
   <div id="list-message" style="margin-bottom: 1em;"></div>
 
