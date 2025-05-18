@@ -463,6 +463,27 @@
             } else {
                 console.log("elementForClosest was null, cannot find .transcript-segment for node:", node);
             }
+        } else if (window.location.pathname.startsWith('/review')) {
+            let elementForClosest = node; // Start with the node itself
+
+            // If the node is a Text node, get its parentElement
+            if (node.nodeType === Node.TEXT_NODE) {
+                elementForClosest = node.parentElement;
+            }
+
+            // Now use elementForClosest (which is guaranteed to be an Element or null)
+            if (elementForClosest) { // Check if elementForClosest is not null
+                const segmentElement = elementForClosest.parentElement.querySelector("a.goto-segment-icon");
+                if (segmentElement && segmentElement.href && segmentElement.href.split('#')[1] && segmentElement.href.split('#')[1].split('=')[1]) {
+                    transcriptSegmentRef = segmentElement.href.split('#')[1];
+                    transcriptSegmentRef = decodeURIComponent(transcriptSegmentRef.split('=')[1]);
+                    console.log("Found segment ref:", transcriptSegmentRef);
+                } else {
+                    console.log("Could not find .goto-segment-icon or data-timestamp for node:", node, "elementForClosest:", elementForClosest);
+                }
+            } else {
+                console.log("elementForClosest was null, cannot find .goto-segment-icon for node:", node);
+            }
         }
         return transcriptSegmentRef;
     }

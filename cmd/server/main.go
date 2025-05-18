@@ -177,7 +177,7 @@ func main() {
 			if err != nil {
 				http.Redirect(w, r, "/login", http.StatusFound)
 			} else {
-				http.Redirect(w, r, "/training", http.StatusFound) // Redirect logged-in users to training
+				http.Redirect(w, r, "/review", http.StatusFound) // Redirect logged-in users to review page
 			}
 		} else {
 			// Let the router's default handle NotFound for other paths
@@ -206,7 +206,7 @@ func main() {
 		// Root redirect
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/" {
-				http.Redirect(w, r, "/training", http.StatusFound) // Redirect logged-in users to training
+				http.Redirect(w, r, "/review", http.StatusFound) // Redirect logged-in users to review page
 			} else {
 				// Handle 404 for other paths not matched
 				http.NotFound(w, r)

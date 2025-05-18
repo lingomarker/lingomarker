@@ -67,7 +67,7 @@ func (h *WebHandlers) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 		// Check if already logged in, redirect if so
 		_, err := auth.GetUserIDFromRequest(r, h.DB, h.Cfg)
 		if err == nil {
-			http.Redirect(w, r, "/training", http.StatusFound) // Redirect to training page
+			http.Redirect(w, r, "/review", http.StatusFound) // Redirect to review page
 			return
 		}
 
@@ -113,7 +113,7 @@ func (h *WebHandlers) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 		// Redirect after successful login
 		redirectURL := r.URL.Query().Get("redirect")
 		if redirectURL == "" || redirectURL == "/login" || redirectURL == "/register" {
-			redirectURL = "/training" // Default redirect
+			redirectURL = "/review" // Default redirect
 		}
 		http.Redirect(w, r, redirectURL, http.StatusFound)
 		return
@@ -127,7 +127,7 @@ func (h *WebHandlers) HandleRegisterPage(w http.ResponseWriter, r *http.Request)
 		// Check if already logged in, redirect if so
 		_, err := auth.GetUserIDFromRequest(r, h.DB, h.Cfg)
 		if err == nil {
-			http.Redirect(w, r, "/training", http.StatusFound) // Redirect to training page
+			http.Redirect(w, r, "/review", http.StatusFound) // Redirect to review page
 			return
 		}
 		data := map[string]interface{}{"Title": "Register", "Error": r.URL.Query().Get("error")}
@@ -187,7 +187,7 @@ func (h *WebHandlers) HandleRegisterPage(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		auth.SetSessionCookie(w, h.Cfg, sessionID, expiry)
-		http.Redirect(w, r, "/training", http.StatusFound) // Redirect to training page
+		http.Redirect(w, r, "/review", http.StatusFound) // Redirect to review page
 		return
 	}
 
