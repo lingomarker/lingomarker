@@ -441,6 +441,31 @@
         });
     }, 300); // Adjust debounce time if needed
 
+    function getTranscriptSegmentRef(node) {
+        let transcriptSegmentRef = null;
+        if (window.location.pathname.startsWith('/podcasts/play/')) {
+            let elementForClosest = node; // Start with the node itself
+
+            // If the node is a Text node, get its parentElement
+            if (node.nodeType === Node.TEXT_NODE) {
+                elementForClosest = node.parentElement;
+            }
+
+            // Now use elementForClosest (which is guaranteed to be an Element or null)
+            if (elementForClosest) { // Check if elementForClosest is not null
+                const segmentElement = elementForClosest.closest('.transcript-segment');
+                if (segmentElement && segmentElement.dataset.timestamp) {
+                    transcriptSegmentRef = segmentElement.dataset.timestamp;
+                    console.log("Found segment ref:", transcriptSegmentRef);
+                } else {
+                    console.log("Could not find .transcript-segment or data-timestamp for node:", node, "elementForClosest:", elementForClosest);
+                }
+            } else {
+                console.log("elementForClosest was null, cannot find .transcript-segment for node:", node);
+            }
+        }
+        return transcriptSegmentRef;
+    }
 
     // Handle clicking on an *existing* highlight
     async function handleHighlightClick(event) {
@@ -467,29 +492,7 @@
             return;
         }
 
-        let transcriptSegmentRef = null;
-        if (window.location.pathname.startsWith('/podcasts/play/')) {
-            let elementForClosest = node; // Start with the node itself
-
-            // If the node is a Text node, get its parentElement
-            if (node.nodeType === Node.TEXT_NODE) {
-                elementForClosest = node.parentElement;
-            }
-
-            // Now use elementForClosest (which is guaranteed to be an Element or null)
-            if (elementForClosest) { // Check if elementForClosest is not null
-                const segmentElement = elementForClosest.closest('.transcript-segment');
-                if (segmentElement && segmentElement.dataset.timestamp) {
-                    transcriptSegmentRef = segmentElement.dataset.timestamp;
-                    console.log("Found segment ref:", transcriptSegmentRef);
-                } else {
-                    console.log("Could not find .transcript-segment or data-timestamp for node:", node, "elementForClosest:", elementForClosest);
-                }
-            } else {
-                console.log("elementForClosest was null, cannot find .transcript-segment for node:", node);
-            }
-        }
-
+        const transcriptSegmentRef = getTranscriptSegmentRef(node);
 
         console.log(`Clicked existing highlight: Word='${clickedWord}', EntryUUID='${entry.uuid}', URL='${context.url}', ParagraphHash='${context.paragraphHash}', transcriptSegmentRef='${transcriptSegmentRef}`);
 
@@ -820,28 +823,7 @@
             console.log(`Known word "${caption}" selected. Updating timestamp.`);
             const context = await getContextFromNode(node);
             if (context) {
-                let transcriptSegmentRef = null;
-                if (window.location.pathname.startsWith('/podcasts/play/')) {
-                    let elementForClosest = node; // Start with the node itself
-
-                    // If the node is a Text node, get its parentElement
-                    if (node.nodeType === Node.TEXT_NODE) {
-                        elementForClosest = node.parentElement;
-                    }
-
-                    // Now use elementForClosest (which is guaranteed to be an Element or null)
-                    if (elementForClosest) { // Check if elementForClosest is not null
-                        const segmentElement = elementForClosest.closest('.transcript-segment');
-                        if (segmentElement && segmentElement.dataset.timestamp) {
-                            transcriptSegmentRef = segmentElement.dataset.timestamp;
-                            console.log("Found segment ref:", transcriptSegmentRef);
-                        } else {
-                            console.log("Could not find .transcript-segment or data-timestamp for node:", node, "elementForClosest:", elementForClosest);
-                        }
-                    } else {
-                        console.log("elementForClosest was null, cannot find .transcript-segment for node:", node);
-                    }
-                }
+                const transcriptSegmentRef = getTranscriptSegmentRef(node);
                 try {
                     await apiRequest('POST', '/api/mark', {
                         word: existingEntry.word,
@@ -882,29 +864,7 @@
                 return;
             }
 
-            let transcriptSegmentRef = null;
-            if (window.location.pathname.startsWith('/podcasts/play/')) {
-                let elementForClosest = node; // Start with the node itself
-
-                // If the node is a Text node, get its parentElement
-                if (node.nodeType === Node.TEXT_NODE) {
-                    elementForClosest = node.parentElement;
-                }
-
-                // Now use elementForClosest (which is guaranteed to be an Element or null)
-                if (elementForClosest) { // Check if elementForClosest is not null
-                    const segmentElement = elementForClosest.closest('.transcript-segment');
-                    if (segmentElement && segmentElement.dataset.timestamp) {
-                        transcriptSegmentRef = segmentElement.dataset.timestamp;
-                        console.log("Found segment ref:", transcriptSegmentRef);
-                    } else {
-                        console.log("Could not find .transcript-segment or data-timestamp for node:", node, "elementForClosest:", elementForClosest);
-                    }
-                } else {
-                    console.log("elementForClosest was null, cannot find .transcript-segment for node:", node);
-                }
-            }
-
+            const transcriptSegmentRef = getTranscriptSegmentRef(node);
 
             try {
                 // Call backend API
