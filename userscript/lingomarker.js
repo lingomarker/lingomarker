@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.7
+// @version      0.8
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -22,6 +22,7 @@
 // @match        https://*.musixmatch.com/*
 // @match        https://*.sueddeutsche.de/*
 // @match        https://*.faz.net/*
+// @match        https://*.lemonde.fr/*
 // @match        https://*.lingea.sk/*
 // @match        https://dev.lingomarker.com:*/*
 // @include      http://127.0.0.1:3000/*
@@ -721,6 +722,9 @@
             if (!element || element === document.body) {
                 element = node.parentNode; // Fallback
             }
+
+            // Remove immersive translate elements
+            element.querySelectorAll('.immersive-translate-target-wrapper').forEach(e => e.remove());
 
             const paragraphText = element.innerText?.trim() || node.textContent?.trim() || ""; // Sanitize and fallback
             if (!paragraphText) {

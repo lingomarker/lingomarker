@@ -29,7 +29,10 @@ go.work.sum
 certs
 
 # database
-lingomarker_dev.db
+lingomarker_dev.db*
+
+# database backups
+lingomarker_dev*.zip
 
 # test files
 test
