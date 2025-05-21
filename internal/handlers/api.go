@@ -282,6 +282,7 @@ func callGeminiForEntryForms(cfg *config.Config, apiKey, entry string) (string, 
  For example, if the input word is any of the words "run", "runs" , "ran", "running", the output will be "run|runs|ran|running".
  For example, if the input phrase is any of the phrases "freak out", "freaks out", "freaked out", "freaking out", the output will be "freak out|freaks out|freaked out|freaking out".
  For example, if the input phrase is any of the phrases "loan shark", "loan sharks", the output will be "loan shark|loan sharks".
+ For example, if the input phrase is any of the phrases "off the cuff", "off-the-cuff", the output will be "off the cuff|off-the-cuff".
  `, entry)
 
 	apiURL := fmt.Sprintf("%s?key=%s", cfg.Gemini.APIEndpoint, apiKey)
