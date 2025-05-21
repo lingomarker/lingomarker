@@ -203,7 +203,7 @@ func (h *APIHandlers) HandleMarkWord(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		wordForms, err := callGeminiForWordForms(h.Cfg, settings.GeminiAPIKey, req.Word)
+		wordForms, err := callGeminiForEntryForms(h.Cfg, settings.GeminiAPIKey, req.Word)
 		if err != nil {
 			rollback(tx, "API MarkWord: Failed to get word forms from Gemini", err)
 			// Return a specific error?
@@ -267,19 +267,22 @@ func (h *APIHandlers) HandleMarkWord(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, finalEntry)
 }
 
-// callGeminiForWordForms interacts with the Gemini API
-func callGeminiForWordForms(cfg *config.Config, apiKey, word string) (string, error) {
+// callGeminiForEntryForms interacts with the Gemini API
+func callGeminiForEntryForms(cfg *config.Config, apiKey, entry string) (string, error) {
 	if apiKey == "" {
 		return "", errors.New("Gemini API key is missing")
 	}
-	if word == "" {
+	if entry == "" {
 		return "", errors.New("word cannot be empty")
 	}
 
 	// Use the prompt generation logic from the UserScript
-	prompt := fmt.Sprintf(`Provide all possible forms (including verb conjugations, plural forms, etc.) of the English word "%s", separated by the pipe symbol '|'. Do not include any additional text or explanations.
- For example, if the word is "run", the output should be "run|runs|ran|running".
- For the input word "%s", the output should be:`, word, word)
+	prompt := fmt.Sprintf(`List all possible forms (including verb conjugations, plural forms, etc.) of the provided word/phrase "%s", separated by the pipe symbol '|'. Do not include any additional text or explanations.
+ For example, if the input word is any of the words "glitch", "glitches", the output will be "glitch|glitches".
+ For example, if the input word is any of the words "run", "runs" , "ran", "running", the output will be "run|runs|ran|running".
+ For example, if the input phrase is any of the phrases "freak out", "freaks out", "freaked out", "freaking out", the output will be "freak out|freaks out|freaked out|freaking out".
+ For example, if the input phrase is any of the phrases "loan shark", "loan sharks", the output will be "loan shark|loan sharks".
+ `, entry)
 
 	apiURL := fmt.Sprintf("%s?key=%s", cfg.Gemini.APIEndpoint, apiKey)
 
@@ -370,17 +373,17 @@ func callGeminiForWordForms(cfg *config.Config, apiKey, word string) (string, er
 	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
 		forms := strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text)
 		// Basic validation: ensure the original word is present
-		if forms == "" || !strings.Contains(forms, word) {
-			log.Printf("Warning: Gemini output for '%s' seems invalid or empty: '%s'. Falling back to just the word.", word, forms)
+		if forms == "" || !strings.Contains(forms, entry) {
+			log.Printf("Warning: Gemini output for '%s' seems invalid or empty: '%s'. Falling back to just the word.", entry, forms)
 			// Fallback to just the original word if Gemini fails or gives weird output
-			return word, nil // Return at least the base word
+			return entry, nil // Return at least the base word
 		}
 		return forms, nil
 	}
 
-	log.Printf("Gemini response for '%s' did not contain expected content structure. Body: %s", word, string(bodyBytes))
+	log.Printf("Gemini response for '%s' did not contain expected content structure. Body: %s", entry, string(bodyBytes))
 	// Fallback if structure is wrong
-	return word, nil // Return base word as fallback
+	return entry, nil // Return base entry as fallback
 }
 
 // HandleDeleteEntry removes a word entry and its relations

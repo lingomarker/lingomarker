@@ -11,7 +11,7 @@ import (
 
 // Config holds transcription related configuration (could be extended)
 type Config struct {
-	ModelName string // e.g., "gemini-2.0-flash"
+	ModelName string
 }
 
 // Service handles transcription tasks
@@ -22,7 +22,7 @@ type Service struct {
 // NewService creates a transcription service
 func NewService(cfg *Config) *Service {
 	if cfg.ModelName == "" {
-		cfg.ModelName = "gemini-2.0-flash" // Use a sensible default, maybe flash? Check latest recommended model
+		cfg.ModelName = "gemini-2.5-flash-preview-04-17" // Use a sensible default, maybe flash? Check latest recommended model
 		log.Printf("Transcription model name not configured, defaulting to %s", cfg.ModelName)
 	}
 	return &Service{cfg: cfg}
