@@ -866,6 +866,49 @@ func (db *DB) DeletePodcastRecord(userID int64, podcastID string) (string, error
 		return storePath, fmt.Errorf("podcast %s not found during delete for user %d", podcastID, userID)
 	}
 
+	// Store path example: uploads/1/7e9010e5-d6f1-4284-8068-79c4617965cc.mp3
+	filename := filepath.Base(storePath)
+	filenameWithoutExt := strings.TrimSuffix(filename, filepath.Ext(filename))
+
+	var urlHash string
+	// Get url_hash from the urls table.
+	err = tx.QueryRow("SELECT url_hash FROM urls WHERE user_id = ? AND url LIKE '%' || ? || '%'", userID, filenameWithoutExt).Scan(&urlHash)
+	if err != nil {
+		return storePath, fmt.Errorf("failed to query url_hash for podcast %s: %w", podcastID, err)
+	}
+
+	if urlHash != "" {
+		rows, err := tx.Query("SELECT paragraph_hash FROM relations WHERE user_id = ? AND url_hash = ?", userID, urlHash)
+		if err != nil {
+			return storePath, fmt.Errorf("failed to query relations for podcast %s: %w", podcastID, err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			r := models.Relation{}
+			if err := rows.Scan(&r.ParagraphHash); err != nil {
+				return storePath, fmt.Errorf("failed to scan relation: %w", err)
+			}
+			// Delete from the paragraphs table
+			_, err = tx.Exec("DELETE FROM paragraphs WHERE user_id = ? AND paragraph_hash = ?", userID, r.ParagraphHash)
+			if err != nil {
+				return storePath, fmt.Errorf("failed to delete paragraphs for podcast %s: %w", podcastID, err)
+			}
+		}
+
+		// Delete from the urls table
+		_, err = tx.Exec("DELETE FROM urls WHERE user_id = ? AND url_hash = ?", userID, urlHash)
+		if err != nil {
+			return storePath, fmt.Errorf("failed to delete urls for podcast %s: %w", podcastID, err)
+		}
+	}
+
+	// Delete from the relations table
+	_, err = tx.Exec("DELETE FROM relations WHERE user_id = ? AND url_hash = ?", userID, urlHash)
+	if err != nil {
+		return storePath, fmt.Errorf("failed to delete relations for podcast %s: %w", podcastID, err)
+	}
+
 	// Commit the transaction *before* attempting file deletion
 	if err := tx.Commit(); err != nil {
 		return storePath, fmt.Errorf("failed to commit transaction for podcast deletion: %w", err)
