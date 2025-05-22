@@ -295,6 +295,17 @@
     transcriptContainer.addEventListener('click', (event) => {
       const segmentElement = event.target.closest('.transcript-segment');
       if (segmentElement) {
+        const textParagraph = segmentElement.querySelector('p.text'); // Get the child paragraph with class 'text'
+
+        // Check if text is selected within this specific paragraph
+        const selection = window.getSelection();
+        if (textParagraph && textParagraph.contains(event.target) && selection && !selection.isCollapsed) {
+          // If text is selected within this paragraph and the click was on/within it,
+          // do nothing (don't play audio).
+          // console.log("Text selected within paragraph, preventing audio playback for this click.");
+          return;
+        }
+
         const startTime = parseFloat(segmentElement.dataset.startTime);
         if (!isNaN(startTime)) {
           audioPlayer.currentTime = startTime;
