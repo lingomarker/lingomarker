@@ -6,7 +6,11 @@
   <style>
     body {
       font-family: sans-serif;
-      margin: 20px;
+      margin: 0; /* Changed from 20px */
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
     }
 
     #podcast-player-container {
@@ -63,26 +67,47 @@
     #podcast-meta h2 {
       margin-top: 0;
     }
+
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px; /* This will provide spacing around the content */
+      box-sizing: border-box;
+    }
+
+    .bottom-bar {
+      display: flex;
+      padding: 10px;
+      background-color: #f0f0f0;
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
+      gap: 10px;
+      align-items: center;
+    }
   </style>
 </head>
 
 <body>
-  <div id="podcast-player-container">
-    <div id="podcast-meta">
-      <h2>{{ .Podcast.Episode }}</h2>
-      <p><strong>Producer:</strong> {{ .Podcast.Producer }} | <strong>Series:</strong> {{ .Podcast.Series }}</p>
-      {{ if .Podcast.Description }}
-      <p><em>{{ .Podcast.Description }}</em></p>
-      {{ end }}
+  <div class="content-area">
+    <div id="podcast-player-container">
+      <div id="podcast-meta">
+        <h2>{{ .Podcast.Episode }}</h2>
+        <p><strong>Producer:</strong> {{ .Podcast.Producer }} | <strong>Series:</strong> {{ .Podcast.Series }}</p>
+        {{ if .Podcast.Description }}
+        <p><em>{{ .Podcast.Description }}</em></p>
+        {{ end }}
+      </div>
+      <audio id="podcast-player" controls></audio>
     </div>
-    <audio id="podcast-player" controls></audio>
+
+    <div id="transcript-container">
+      <p class="loading-message">Loading transcript...</p>
+    </div>
   </div>
 
-  <div id="transcript-container">
-    <p class="loading-message">Loading transcript...</p>
+  <div class="bottom-bar">
+    <p><a href="/podcasts">Podcast List</a></p>
+    <p><a href="/review">Review</a></p>
   </div>
-
-  <p style="margin-top: 2em;"><a href="/podcasts">Back to Podcast List</a>&nbsp&nbsp&nbsp<a href="/review">Back to Review</a></p>
 
   <script>
     const podcastId = "{{ .PodcastID }}";
