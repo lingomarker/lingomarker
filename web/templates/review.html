@@ -13,11 +13,11 @@
       height: 100vh;
     }
 
-    .top-bar {
+    .bottom-bar {
       display: flex;
       padding: 10px;
       background-color: #f0f0f0;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
       gap: 10px;
       align-items: center;
     }
@@ -89,14 +89,13 @@
 </head>
 
 <body>
-  <div class="top-bar">
-    <button id="reloadButton">Reload</button>
-    <!-- Add other controls if needed -->
-     <p><a href="/podcasts">Podcast List</a></p>
-  </div>
-
   <div class="content-area" id="reviewContentArea">
     <p class="loading-message">Loading review items...</p>
+  </div>
+  <div class="bottom-bar">
+    <button id="reloadButton">Reload</button>
+    <p><a href="/podcasts">Podcast List</a></p>
+    <!-- Add other controls if needed -->
   </div>
 
   <script>

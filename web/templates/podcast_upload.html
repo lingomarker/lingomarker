@@ -1,103 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
 {{ template "head.html" . }} <!-- Assuming you have a head partial -->
+
+<head>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .content-area h1 {
+      margin-top: 0;
+    }
+
+    .bottom-bar {
+      display: flex;
+      padding: 10px;
+      background-color: #f0f0f0;
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
+      gap: 10px;
+      align-items: center;
+    }
+  </style>
+</head>
+
 <body>
+  <div class="content-area">
     <h1>Upload New Podcast Episode</h1>
 
     <div id="upload-message" style="margin-bottom: 1em;"></div> <!-- For success/error messages -->
 
     <!-- Use multipart/form-data for file uploads -->
     <form id="upload-form" method="POST" action="/api/podcasts" enctype="multipart/form-data">
-        <fieldset>
-            <legend>Episode Details</legend>
-            <div>
-                <label for="producer">Producer:</label><br>
-                <input type="text" id="producer" name="producer" required size="50" placeholder="e.g., NPR">
-            </div>
-             <div>
-                <label for="series">Series:</label><br>
-                <input type="text" id="series" name="series" required size="50" placeholder="e.g., It's Been a Minute">
-            </div>
-             <div>
-                <label for="episode">Episode Title:</label><br>
-                <input type="text" id="episode" name="episode" required size="70" placeholder="e.g., The Rise of the Pumpkin Spice Latte">
-            </div>
-            <div>
-                <label for="description">Episode Description (Optional):</label><br>
-                <textarea id="description" name="description" rows="4" cols="70" placeholder="Optional summary of the episode..."></textarea>
-            </div>
-        </fieldset>
+      <fieldset>
+        <legend>Episode Details</legend>
+        <div>
+          <label for="producer">Producer:</label><br>
+          <input type="text" id="producer" name="producer" required size="50" placeholder="e.g., NPR">
+        </div>
+        <div>
+          <label for="series">Series:</label><br>
+          <input type="text" id="series" name="series" required size="50" placeholder="e.g., It's Been a Minute">
+        </div>
+        <div>
+          <label for="episode">Episode Title:</label><br>
+          <input type="text" id="episode" name="episode" required size="70" placeholder="e.g., The Rise of the Pumpkin Spice Latte">
+        </div>
+        <div>
+          <label for="description">Episode Description (Optional):</label><br>
+          <textarea id="description" name="description" rows="4" cols="70" placeholder="Optional summary of the episode..."></textarea>
+        </div>
+      </fieldset>
 
-        <fieldset>
-            <legend>Audio & Transcript</legend>
-             <div>
-                <label for="audio_file">Audio File:</label><br>
-                <input type="file" id="audio_file" name="audio_file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg" required>
-                <small>(Allowed: mp3, m4a, wav, ogg)</small>
-            </div>
-             <div style="margin-top: 1em;">
-                <label for="original_transcript">Original Transcript (Optional):</label><br>
-                <textarea id="original_transcript" name="original_transcript" rows="8" cols="70" placeholder="Paste existing transcript text here, if available..."></textarea>
-            </div>
-        </fieldset>
+      <fieldset>
+        <legend>Audio & Transcript</legend>
+        <div>
+          <label for="audio_file">Audio File:</label><br>
+          <input type="file" id="audio_file" name="audio_file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg" required>
+          <small>(Allowed: mp3, m4a, wav, ogg)</small>
+        </div>
+        <div style="margin-top: 1em;">
+          <label for="original_transcript">Original Transcript (Optional):</label><br>
+          <textarea id="original_transcript" name="original_transcript" rows="8" cols="70" placeholder="Paste existing transcript text here, if available..."></textarea>
+        </div>
+      </fieldset>
 
-        <button type="submit" id="submit-button" style="margin-top: 1em;">Upload and Transcribe</button>
-        <span id="spinner" style="display: none; margin-left: 10px;">⏳ Uploading...</span>
+      <button type="submit" id="submit-button" style="margin-top: 1em;">Upload and Transcribe</button>
+      <span id="spinner" style="display: none; margin-left: 10px;">⏳ Uploading...</span>
 
     </form>
+  </div>
 
-    <p style="margin-top: 2em;"><a href="/podcasts">Back to Podcast List</a></p> <!-- Link to list page (we'll create later) -->
+  <div class="bottom-bar">
+    <p><a href="/podcasts">Podcast List</a></p>
+    <p><a href="/review">Review</a></p>
+  </div>
 
-    <script>
-        const form = document.getElementById('upload-form');
-        const messageDiv = document.getElementById('upload-message');
-        const submitButton = document.getElementById('submit-button');
-        const spinner = document.getElementById('spinner');
+  <script>
+    const form = document.getElementById('upload-form');
+    const messageDiv = document.getElementById('upload-message');
+    const submitButton = document.getElementById('submit-button');
+    const spinner = document.getElementById('spinner');
 
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault(); // Stop default form submission
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault(); // Stop default form submission
 
-            messageDiv.textContent = ''; // Clear previous messages
-            messageDiv.style.color = 'inherit';
-            submitButton.disabled = true;
-            spinner.style.display = 'inline-block';
+      messageDiv.textContent = ''; // Clear previous messages
+      messageDiv.style.color = 'inherit';
+      submitButton.disabled = true;
+      spinner.style.display = 'inline-block';
 
-            const formData = new FormData(form);
+      const formData = new FormData(form);
 
-            try {
-                // Use fetch to send the form data asynchronously
-                const response = await fetch('/api/podcasts', {
-                    method: 'POST',
-                    body: formData,
-                    // No 'Content-Type' header needed for FormData; browser sets it correctly with boundary
-                     headers: {
-                        // Include Accept header if your API handler expects/returns JSON
-                        'Accept': 'application/json'
-                    }
-                });
-
-                const result = await response.json(); // Assuming backend always sends JSON
-
-                if (response.ok && response.status === 202) { // Check for 202 Accepted
-                    messageDiv.textContent = `✅ ${result.message || 'Upload successful, transcription started.'} (ID: ${result.podcastId})`;
-                    messageDiv.style.color = 'green';
-                    form.reset(); // Clear the form on success
-                } else {
-                    // Handle errors returned in JSON body or based on status code
-                    messageDiv.textContent = `❌ Error: ${result.error || `Upload failed with status ${response.status}`}`;
-                    messageDiv.style.color = 'red';
-                }
-
-            } catch (error) {
-                console.error('Upload error:', error);
-                messageDiv.textContent = `❌ Network Error: ${error.message || 'Could not connect to server.'}`;
-                messageDiv.style.color = 'red';
-            } finally {
-                submitButton.disabled = false;
-                spinner.style.display = 'none';
-            }
+      try {
+        // Use fetch to send the form data asynchronously
+        const response = await fetch('/api/podcasts', {
+          method: 'POST',
+          body: formData,
+          // No 'Content-Type' header needed for FormData; browser sets it correctly with boundary
+          headers: {
+            // Include Accept header if your API handler expects/returns JSON
+            'Accept': 'application/json'
+          }
         });
-    </script>
+
+        const result = await response.json(); // Assuming backend always sends JSON
+
+        if (response.ok && response.status === 202) { // Check for 202 Accepted
+          messageDiv.textContent = `✅ ${result.message || 'Upload successful, transcription started.'} (ID: ${result.podcastId})`;
+          messageDiv.style.color = 'green';
+          form.reset(); // Clear the form on success
+        } else {
+          // Handle errors returned in JSON body or based on status code
+          messageDiv.textContent = `❌ Error: ${result.error || `Upload failed with status ${response.status}`}`;
+          messageDiv.style.color = 'red';
+        }
+
+      } catch (error) {
+        console.error('Upload error:', error);
+        messageDiv.textContent = `❌ Network Error: ${error.message || 'Could not connect to server.'}`;
+        messageDiv.style.color = 'red';
+      } finally {
+        submitButton.disabled = false;
+        spinner.style.display = 'none';
+      }
+    });
+  </script>
 
 </body>
+
 </html>

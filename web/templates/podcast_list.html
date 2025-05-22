@@ -13,45 +13,57 @@
       height: 100vh;
     }
 
-    .top-bar {
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .content-area h1 { /* Optional: Adjust h1 margin if needed */
+      margin-top: 0;
+    }
+
+    .bottom-bar {
       display: flex;
       padding: 10px;
       background-color: #f0f0f0;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
       gap: 10px;
       align-items: center;
     }
   </style>
 </head>
-
 <body>
-  <h1>My Podcasts</h1>
+  <div class="content-area">
+    <h1>My Podcasts</h1>
 
-  <div class="top-bar">
+    <div id="list-message" style="margin-bottom: 1em;"></div>
+
+    <table id="podcast-table" border="1" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th>Producer</th>
+          <th>Series</th>
+          <th>Episode</th>
+          <th>Uploaded</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="podcast-tbody">
+        <!-- Rows will be inserted here by JavaScript -->
+        <tr>
+          <td colspan="6">Loading podcasts...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bottom-bar">
     <p><a href="/podcasts/upload">Upload New Podcast</a></p>
     <p><a href="/review">Review</a></p>
   </div>
-
-  <div id="list-message" style="margin-bottom: 1em;"></div>
-
-  <table id="podcast-table" border="1" style="width: 100%; border-collapse: collapse;">
-    <thead>
-      <tr>
-        <th>Producer</th>
-        <th>Series</th>
-        <th>Episode</th>
-        <th>Uploaded</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="podcast-tbody">
-      <!-- Rows will be inserted here by JavaScript -->
-      <tr>
-        <td colspan="6">Loading podcasts...</td>
-      </tr>
-    </tbody>
-  </table>
 
   <script>
     const tbody = document.getElementById('podcast-tbody');
