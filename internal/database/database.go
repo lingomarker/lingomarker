@@ -395,13 +395,40 @@ func (db *DB) DeleteEntryAndRelations(userID int64, entryUUID string) error {
 	}
 	defer tx.Rollback() // Rollback if commit fails or panics
 
-	// Delete relations first (due to potential FK, though not strictly enforced here)
+	// 1. Get all url_hash and paragraph_hash associated with the entry's relations before deleting them.
+	//    These are candidates for cleanup if they become orphaned.
+	var orphanedCandidates []struct {
+		URLHash       string
+		ParagraphHash string
+	}
+	candidateRows, err := tx.Query(`
+		SELECT DISTINCT url_hash, paragraph_hash
+		FROM relations
+		WHERE user_id = ? AND entry_uuid = ?
+	`, userID, entryUUID)
+	if err != nil {
+		return fmt.Errorf("failed to query relations for cleanup candidates: %w", err)
+	}
+	for candidateRows.Next() {
+		var candidate struct{ URLHash, ParagraphHash string }
+		if err := candidateRows.Scan(&candidate.URLHash, &candidate.ParagraphHash); err != nil {
+			candidateRows.Close()
+			return fmt.Errorf("failed to scan cleanup candidate: %w", err)
+		}
+		orphanedCandidates = append(orphanedCandidates, candidate)
+	}
+	candidateRows.Close()
+	if err = candidateRows.Err(); err != nil {
+		return fmt.Errorf("error iterating cleanup candidates: %w", err)
+	}
+
+	// 2. Delete relations associated with the entry.
 	_, err = tx.Exec("DELETE FROM relations WHERE user_id = ? AND entry_uuid = ?", userID, entryUUID)
 	if err != nil {
 		return fmt.Errorf("failed to delete relations: %w", err)
 	}
 
-	// Delete the entry itself
+	// 3. Delete the entry itself.
 	res, err := tx.Exec("DELETE FROM entries WHERE user_id = ? AND uuid = ?", userID, entryUUID)
 	if err != nil {
 		return fmt.Errorf("failed to delete entry: %w", err)
@@ -410,12 +437,51 @@ func (db *DB) DeleteEntryAndRelations(userID int64, entryUUID string) error {
 	rowsAffected, _ := res.RowsAffected()
 	if rowsAffected == 0 {
 		// Optional: Return an error or log if the entry didn't exist
-		// return errors.New("entry not found")
 		log.Printf("Warning: Attempted to delete non-existent entry (UUID: %s) for user %d", entryUUID, userID)
+		// If the entry didn't exist, orphanedCandidates would be empty, so no cleanup needed.
+		// The transaction can be committed.
 	}
 
-	// TODO: Optionally implement cleanup for orphaned URLs/Paragraphs later
-	// This would involve checking if any other relations point to them before deleting.
+	// 4. Clean up orphaned URLs and Paragraphs.
+	//    For each candidate, check if it's still referenced by any *other* relation for this user.
+	processedURLHashes := make(map[string]bool)
+	processedParagraphHashes := make(map[string]bool)
+
+	for _, candidate := range orphanedCandidates {
+		// Cleanup URL if not already processed and if it's no longer referenced.
+		if !processedURLHashes[candidate.URLHash] {
+			var count int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM relations WHERE user_id = ? AND url_hash = ?`, userID, candidate.URLHash).Scan(&count)
+			if err != nil {
+				return fmt.Errorf("failed to check remaining relations for url_hash %s: %w", candidate.URLHash, err)
+			}
+			if count == 0 {
+				_, err = tx.Exec("DELETE FROM urls WHERE user_id = ? AND url_hash = ?", userID, candidate.URLHash)
+				if err != nil {
+					return fmt.Errorf("failed to delete orphaned url %s: %w", candidate.URLHash, err)
+				}
+				log.Printf("Cleaned up orphaned URL (Hash: %s) for user %d", candidate.URLHash, userID)
+			}
+			processedURLHashes[candidate.URLHash] = true
+		}
+
+		// Cleanup Paragraph if not already processed and if it's no longer referenced.
+		if !processedParagraphHashes[candidate.ParagraphHash] {
+			var count int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM relations WHERE user_id = ? AND paragraph_hash = ?`, userID, candidate.ParagraphHash).Scan(&count)
+			if err != nil {
+				return fmt.Errorf("failed to check remaining relations for paragraph_hash %s: %w", candidate.ParagraphHash, err)
+			}
+			if count == 0 {
+				_, err = tx.Exec("DELETE FROM paragraphs WHERE user_id = ? AND paragraph_hash = ?", userID, candidate.ParagraphHash)
+				if err != nil {
+					return fmt.Errorf("failed to delete orphaned paragraph %s: %w", candidate.ParagraphHash, err)
+				}
+				log.Printf("Cleaned up orphaned Paragraph (Hash: %s) for user %d", candidate.ParagraphHash, userID)
+			}
+			processedParagraphHashes[candidate.ParagraphHash] = true
+		}
+	}
 
 	return tx.Commit() // Commit the transaction
 }
@@ -871,7 +937,7 @@ func (db *DB) DeletePodcastRecord(userID int64, podcastID string) (string, error
 	filenameWithoutExt := strings.TrimSuffix(filename, filepath.Ext(filename))
 
 	var urlHash string
-	// Get url_hash from the urls table.
+	// Get url_hash from the urls table
 	err = tx.QueryRow("SELECT url_hash FROM urls WHERE user_id = ? AND url LIKE '%' || ? || '%'", userID, filenameWithoutExt).Scan(&urlHash)
 	if err != nil {
 		return storePath, fmt.Errorf("failed to query url_hash for podcast %s: %w", podcastID, err)
