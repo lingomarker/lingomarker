@@ -22,22 +22,22 @@
       box-sizing: border-box;
     }
 
-    #podcast-player-container {
+    #podcast-info-container {
       max-height: 20vh;
       flex: 1;
       overflow-y: auto;
-      margin-bottom: 20px;
       padding: 10px;
       border: 1px solid #ccc;
       background-color: #f9f9f9;
     }
 
     #podcast-player {
+      margin: 10px 0;
       width: 100%;
     }
 
     #transcript-container {
-      flex: 2;
+      flex: 4;
       height: auto;
       overflow-y: auto;
       border: 1px solid #eee;
@@ -95,7 +95,7 @@
 
 <body>
   <div class="content-area">
-    <div id="podcast-player-container">
+    <div id="podcast-info-container">
       <div id="podcast-meta">
         <h2>{{ .Podcast.Episode }}</h2>
         <p><strong>Producer:</strong> {{ .Podcast.Producer }} | <strong>Series:</strong> {{ .Podcast.Series }}</p>
@@ -103,9 +103,8 @@
         <p><em>{{ .Podcast.Description }}</em></p>
         {{ end }}
       </div>
-      <audio id="podcast-player" controls></audio>
     </div>
-
+    <audio id="podcast-player" controls></audio>
     <div id="transcript-container">
       <p class="loading-message">Loading transcript...</p>
     </div>
