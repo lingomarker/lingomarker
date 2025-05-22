@@ -13,25 +13,34 @@
       height: 100vh;
     }
 
-    .bottom-bar {
-      display: flex;
-      padding: 10px;
-      background-color: #f0f0f0;
-      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
-      gap: 10px;
-      align-items: center;
-    }
-
-    .top-bar button {
-      padding: 8px 12px;
-      font-size: 16px;
-    }
-
     .content-area {
+      display: flex;
+      flex-direction: column;
       flex: 1;
       overflow-y: auto;
       padding: 20px;
       box-sizing: border-box;
+    }
+
+    #review-container {
+      overflow-y: auto;
+      border: 1px solid #eee;
+      padding: 10px;
+    }
+
+    .bottom-bar {
+      display: flex;
+      padding: 10px;
+      background-color: #f0f0f0;
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
+      /* Shadow on top */
+      gap: 10px;
+      align-items: center;
+    }
+
+    .bottom-bar button {
+      padding: 8px 12px;
+      font-size: 16px;
     }
 
     .review-source {
@@ -55,7 +64,7 @@
     }
 
     .review-paragraph {
-      margin: 0 0 10px 20px;
+      margin: 0 0 10px 0;
       /* Indent paragraphs */
       padding: 8px;
       background: #f4f4f4;
@@ -89,9 +98,12 @@
 </head>
 
 <body>
-  <div class="content-area" id="reviewContentArea">
-    <p class="loading-message">Loading review items...</p>
+  <div class="content-area">
+    <div id="review-container">
+      <p class="loading-message">Loading review items...</p>
+    </div>
   </div>
+
   <div class="bottom-bar">
     <button id="reloadButton">Reload</button>
     <p><a href="/podcasts">Podcast List</a></p>
@@ -99,7 +111,7 @@
   </div>
 
   <script>
-    const contentArea = document.getElementById('reviewContentArea');
+    const contentArea = document.getElementById('review-container');
     const reloadButton = document.getElementById('reloadButton');
 
     // Simple HTML escaping
@@ -167,7 +179,7 @@
 
       // After rendering, if UserScript needs explicit trigger to re-highlight:
       // This depends on how your UserScript's MutationObserver is set up.
-      // If it observes #reviewContentArea children changing, it might auto-run.
+      // If it observes #review-container children changing, it might auto-run.
       // If not, dispatch a custom event that the UserScript listens for.
       // document.dispatchEvent(new CustomEvent('lingomarker-content-updated'));
     }
@@ -199,7 +211,7 @@
 
     // How to remember scroll position and scroll back
     const initScrollPositionSaver = () => {
-      const contentArea = document.getElementById("reviewContentArea");
+      const contentArea = document.getElementById("review-container");
 
       // Define a key for this page
       const localStorageKey = `scroll-y-position-review-page`;

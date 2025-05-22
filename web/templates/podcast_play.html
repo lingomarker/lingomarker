@@ -6,14 +6,26 @@
   <style>
     body {
       font-family: sans-serif;
-      margin: 0; /* Changed from 20px */
+      margin: 0;
       padding: 0;
       display: flex;
       flex-direction: column;
       height: 100vh;
     }
 
+    .content-area {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
     #podcast-player-container {
+      max-height: 20vh;
+      flex: 1;
+      overflow-y: auto;
       margin-bottom: 20px;
       padding: 10px;
       border: 1px solid #ccc;
@@ -25,7 +37,8 @@
     }
 
     #transcript-container {
-      max-height: 60vh;
+      flex: 2;
+      height: auto;
       overflow-y: auto;
       border: 1px solid #eee;
       padding: 10px;
@@ -68,18 +81,12 @@
       margin-top: 0;
     }
 
-    .content-area {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px; /* This will provide spacing around the content */
-      box-sizing: border-box;
-    }
-
     .bottom-bar {
       display: flex;
       padding: 10px;
       background-color: #f0f0f0;
-      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
+      /* Shadow on top */
       gap: 10px;
       align-items: center;
     }
