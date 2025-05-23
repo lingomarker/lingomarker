@@ -939,7 +939,7 @@ func (db *DB) DeletePodcastRecord(userID int64, podcastID string) (string, error
 	var urlHash string
 	// Get url_hash from the urls table
 	err = tx.QueryRow("SELECT url_hash FROM urls WHERE user_id = ? AND url LIKE '%' || ? || '%'", userID, filenameWithoutExt).Scan(&urlHash)
-	if err != nil {
+	if err != nil && err.Error() != "sql: no rows in result set" {
 		return storePath, fmt.Errorf("failed to query url_hash for podcast %s: %w", podcastID, err)
 	}
 
