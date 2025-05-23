@@ -168,15 +168,14 @@ class PodcastTableComponent extends HTMLElement {
 
   connectedCallback() {
     console.log('PodcastTableComponent connected to DOM.');
-    // Event Listeners (will be added in subsequent steps)
-    // this.shadowRoot.getElementById('search-input').addEventListener('input', this._onSearch.bind(this));
-    // this.shadowRoot.getElementById('prev-button').addEventListener('click', this._onPrevPage.bind(this));
-    // this.shadowRoot.getElementById('next-button').addEventListener('click', this._onNextPage.bind(this));
-    // this.shadowRoot.getElementById('podcast-tbody-element').addEventListener('click', this._handleTableActions.bind(this));
+    // Setup Event Listeners
+    this.shadowRoot.getElementById('search-input').addEventListener('input', this._onSearch.bind(this));
+    this.shadowRoot.getElementById('prev-button').addEventListener('click', this._onPrevPage.bind(this));
+    this.shadowRoot.getElementById('next-button').addEventListener('click', this._onNextPage.bind(this));
+    this.shadowRoot.getElementById('podcast-tbody-element').addEventListener('click', this._handleTableActions.bind(this));
 
-    // Initial data fetch (will be implemented next)
-    // this._fetchData();
-    this._render(); // Initial render with placeholder
+    // Initial data fetch
+    this._fetchData();
   }
 
   disconnectedCallback() {
@@ -197,32 +196,180 @@ class PodcastTableComponent extends HTMLElement {
 
   // --- Main Render Orchestrator (will be expanded) ---
   _render() {
-    const tbody = this.shadowRoot.getElementById('podcast-tbody-element');
-    tbody.innerHTML = '<tr><td colspan="6" class="loading-message">Loading podcasts...</td></tr>';
-    // In future steps, this will:
-    // 1. Apply search filter
-    // 2. Apply pagination
-    // 3. Call _renderTableRows with the processed data
-    // 4. Call _renderPaginationControls
-    // 5. Call _startPollingIfNeeded
+    // This method will now orchestrate the display based on current state
+    this._applyFiltersAndPagination(); // Apply search and pagination
+    this._renderTableRows();      // Render the table with _podcastsToDisplay
+    this._renderPaginationControls(); // Update pagination controls
+    this._startPollingIfNeeded();     // Handle status polling
   }
 
-  // --- Placeholder for other methods to be added ---
-  // _fetchData() { /* ... */ }
-  // _onSearch(event) { /* ... */ }
-  // _applyFiltersAndPagination() { /* ... */ }
-  // _renderTableRows(podcasts) { /* ... */ }
-  // _renderPaginationControls() { /* ... */ }
-  // _onPrevPage() { /* ... */ }
-  // _onNextPage() { /* ... */ }
-  // _handleTableActions(event) { /* ... */ }
+  // --- Data Fetching ---
+  async _fetchData() {
+    const tbody = this.shadowRoot.getElementById('podcast-tbody-element');
+    tbody.innerHTML = `<tr><td colspan="6" class="loading-message">Fetching podcasts...</td></tr>`;
+    try {
+      const response = await fetch(this._apiEndpoint);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch podcasts: ${response.status} ${response.statusText}`);
+      }
+      const data = await response.json();
+      this._allPodcasts = data.sort((a, b) => new Date(b.uploadTime) - new Date(a.uploadTime)); // Default sort by upload time desc
+      this._showMessage(''); // Clear any previous messages
+    } catch (error) {
+      console.error('Error fetching podcasts:', error);
+      this._allPodcasts = [];
+      tbody.innerHTML = `<tr><td colspan="6" class="error-message">Error loading podcasts: ${this._escapeHtml(error.message)}</td></tr>`;
+      this._showMessage(`Error: ${error.message}`, 'error');
+    }
+    this._currentPage = 1; // Reset to first page after fetch
+    this._render(); // Render with fetched data (or error state)
+  }
+
+  // --- Search, Filtering, and Pagination Logic ---
+  _applyFiltersAndPagination() {
+    let filtered = [...this._allPodcasts];
+
+    // 1. Apply Search Filter
+    if (this._currentSearchQuery) {
+      const query = this._currentSearchQuery.toLowerCase();
+      filtered = filtered.filter(p =>
+        (p.producer && p.producer.toLowerCase().includes(query)) ||
+        (p.series && p.series.toLowerCase().includes(query)) ||
+        (p.episode && p.episode.toLowerCase().includes(query))
+      );
+    }
+    this._filteredPodcasts = filtered;
+
+    // 2. Apply Pagination
+    const startIndex = (this._currentPage - 1) * this._itemsPerPage;
+    const endIndex = startIndex + this._itemsPerPage;
+    this._podcastsToDisplay = this._filteredPodcasts.slice(startIndex, endIndex);
+  }
+
+  // --- Rendering Table Rows ---
+  _renderTableRows() {
+    const tbody = this.shadowRoot.getElementById('podcast-tbody-element');
+    tbody.innerHTML = ''; // Clear previous rows
+
+    if (this._podcastsToDisplay.length === 0) {
+      if (this._currentSearchQuery) {
+        tbody.innerHTML = `<tr><td colspan="6" class="no-results-message">No podcasts match your search "${this._escapeHtml(this._currentSearchQuery)}".</td></tr>`;
+      } else {
+        tbody.innerHTML = `<tr><td colspan="6" class="no-results-message">No podcasts uploaded yet.</td></tr>`;
+      }
+      return;
+    }
+
+    this._podcastsToDisplay.forEach(podcast => {
+      const row = document.createElement('tr');
+      row.dataset.podcastId = podcast.id;
+      row.dataset.status = podcast.status;
+
+      const uploadDate = new Date(podcast.uploadTime).toLocaleString();
+
+      let statusHtml = '';
+      switch (podcast.status) {
+        case 'uploaded':
+        case 'transcribing':
+          statusHtml = `<span>${this._escapeHtml(podcast.status)} <span class="spinner">⏳</span></span>`;
+          break;
+        case 'completed':
+          statusHtml = '<span style="color: green;">✓ Completed</span>';
+          break;
+        case 'failed':
+          statusHtml = `<span style="color: red;">✗ Failed</span>`;
+          if (podcast.errorMessage) {
+            statusHtml += ` <small style="display:block; color: #777;">${this._escapeHtml(podcast.errorMessage)}</small>`;
+          }
+          break;
+        default:
+          statusHtml = this._escapeHtml(podcast.status);
+      }
+
+      let actionsHtml = '';
+      actionsHtml += `<button class="action-open" data-id="${podcast.id}" ${podcast.status !== 'completed' ? 'disabled' : ''}>Open</button> `;
+      actionsHtml += `<button class="action-delete" data-id="${podcast.id}">Delete</button>`;
+
+      row.innerHTML = `
+        <td data-label="Producer">${this._escapeHtml(podcast.producer)}</td>
+        <td data-label="Series">${this._escapeHtml(podcast.series)}</td>
+        <td data-label="Episode">${this._escapeHtml(podcast.episode)}</td>
+        <td data-label="Uploaded">${uploadDate}</td>
+        <td data-label="Status" class="status-cell">${statusHtml}</td>
+        <td data-label="Actions" class="actions-cell">${actionsHtml}</td>
+      `;
+      tbody.appendChild(row);
+    });
+  }
+
+  // --- Rendering Pagination Controls ---
+  _renderPaginationControls() {
+    const prevButton = this.shadowRoot.getElementById('prev-button');
+    const nextButton = this.shadowRoot.getElementById('next-button');
+    const paginationInfo = this.shadowRoot.getElementById('pagination-info');
+
+    const totalItems = this._filteredPodcasts.length;
+    const totalPages = Math.ceil(totalItems / this._itemsPerPage);
+
+    this._currentPage = Math.max(1, Math.min(this._currentPage, totalPages || 1));
+
+    if (totalItems === 0) {
+        paginationInfo.textContent = 'No podcasts';
+    } else {
+        const startItem = (this._currentPage - 1) * this._itemsPerPage + 1;
+        const endItem = Math.min(this._currentPage * this._itemsPerPage, totalItems);
+        paginationInfo.textContent = `Showing ${startItem}-${endItem} of ${totalItems} (Page ${this._currentPage} of ${totalPages})`;
+    }
+
+    prevButton.disabled = this._currentPage === 1;
+    nextButton.disabled = this._currentPage === totalPages || totalItems === 0;
+  }
+
+  // --- Event Handlers (stubs for now, to be fully implemented) ---
+  _onSearch(event) {
+    this._currentSearchQuery = event.target.value;
+    this._currentPage = 1; // Reset to first page on new search
+    this._render();
+  }
+
   // _deletePodcast(podcastId, rowElement) { /* ... */ }
   // _openPodcast(podcastId) { /* ... */ }
   // _startPollingIfNeeded() { /* ... */ }
   // _pollPodcastStatuses() { /* ... */ }
   // _stopPolling() { /* ... */ }
   // _showMessage(text, type = 'info') { /* ... */ }
-}
 
+  _onPrevPage() {
+    if (this._currentPage > 1) {
+      this._currentPage--;
+      this._render();
+    }
+  }
+
+  _onNextPage() {
+    const totalPages = Math.ceil(this._filteredPodcasts.length / this._itemsPerPage);
+    if (this._currentPage < totalPages) {
+      this._currentPage++;
+      this._render();
+    }
+  }
+
+  _handleTableActions(event) {
+    const target = event.target;
+    const podcastId = target.dataset.id;
+
+    if (target.classList.contains('action-delete')) {
+      console.log(`TODO: Delete podcast ${podcastId}`);
+      // this._deletePodcast(podcastId, target.closest('tr'));
+    } else if (target.classList.contains('action-open') && !target.disabled) {
+      console.log(`TODO: Open podcast ${podcastId}`);
+      // this._openPodcast(podcastId);
+    }
+  }
+
+  // --- Utility Methods ---
+  _startPollingIfNeeded() { /* Placeholder for polling logic */ }
+  _showMessage(text, type = 'info') { /* Placeholder for user messages */ }
+}
 // Define the custom element
 customElements.define('podcast-table-component', PodcastTableComponent);
