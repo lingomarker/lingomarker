@@ -81,8 +81,8 @@ func main() {
 	mux := router.New()
 
 	// Static files (optional, if needed)
-	// staticFs := http.FileServer(http.Dir(cfg.Web.StaticDir))
-	// mux.Handle("/static/", http.StripPrefix("/static/", staticFs))
+	staticFs := http.FileServer(http.Dir(cfg.Web.StaticDir))
+	mux.HandlePrefix("GET", "/static/", http.StripPrefix("/static/", staticFs))
 
 	// Public Web Pages (No Auth Required)
 	// Use Handle with method "GET" (or "" for any method if desired)
