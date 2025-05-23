@@ -180,7 +180,7 @@ class PodcastTableComponent extends HTMLElement {
 
   disconnectedCallback() {
     console.log('PodcastTableComponent disconnected from DOM.');
-    // this._stopPolling(); // Cleanup polling interval
+    this._stopPolling(); // Cleanup polling interval
   }
 
   // --- Helper to escape HTML ---
@@ -332,13 +332,6 @@ class PodcastTableComponent extends HTMLElement {
     this._render();
   }
 
-  // _deletePodcast(podcastId, rowElement) { /* ... */ }
-  // _openPodcast(podcastId) { /* ... */ }
-  // _startPollingIfNeeded() { /* ... */ }
-  // _pollPodcastStatuses() { /* ... */ }
-  // _stopPolling() { /* ... */ }
-  // _showMessage(text, type = 'info') { /* ... */ }
-
   _onPrevPage() {
     if (this._currentPage > 1) {
       this._currentPage--;
@@ -359,17 +352,132 @@ class PodcastTableComponent extends HTMLElement {
     const podcastId = target.dataset.id;
 
     if (target.classList.contains('action-delete')) {
-      console.log(`TODO: Delete podcast ${podcastId}`);
-      // this._deletePodcast(podcastId, target.closest('tr'));
+      const row = target.closest('tr');
+      const episodeTitle = row?.cells[2]?.textContent || `ID ${podcastId}`;
+      if (confirm(`Are you sure you want to delete podcast "${this._escapeHtml(episodeTitle)}"? This cannot be undone.`)) {
+        this._deletePodcast(podcastId, row);
+      }
     } else if (target.classList.contains('action-open') && !target.disabled) {
-      console.log(`TODO: Open podcast ${podcastId}`);
-      // this._openPodcast(podcastId);
+      this._openPodcast(podcastId);
     }
   }
 
-  // --- Utility Methods ---
-  _startPollingIfNeeded() { /* Placeholder for polling logic */ }
-  _showMessage(text, type = 'info') { /* Placeholder for user messages */ }
+  async _deletePodcast(podcastId, rowElement) {
+    const deleteButton = rowElement.querySelector('.action-delete');
+    if (deleteButton) {
+        deleteButton.disabled = true;
+        deleteButton.textContent = 'Deleting...';
+    }
+    this._showMessage(''); // Clear previous messages
+
+    try {
+      const response = await fetch(`${this._apiEndpoint}/${podcastId}`, {
+        method: 'DELETE'
+      });
+      const result = await response.json(); // Expecting JSON like { message: "..." } or { error: "..." }
+
+      if (response.ok) {
+        this._showMessage(`✅ ${result.message || 'Podcast deleted successfully.'}`, 'success');
+        // Remove from _allPodcasts and re-render
+        this._allPodcasts = this._allPodcasts.filter(p => p.id !== podcastId);
+        this._render(); // This will re-apply filters, pagination, and re-render table & controls
+      } else {
+        this._showMessage(`❌ Error: ${result.error || `Deletion failed (${response.status})`}`, 'error');
+        if (deleteButton) {
+            deleteButton.disabled = false;
+            deleteButton.textContent = 'Delete';
+        }
+      }
+    } catch (error) {
+      console.error("Delete podcast error:", error);
+      this._showMessage(`❌ Network Error: ${error.message}`, 'error');
+      if (deleteButton) {
+          deleteButton.disabled = false;
+          deleteButton.textContent = 'Delete';
+      }
+    }
+  }
+
+  _openPodcast(podcastId) {
+    // Assuming your podcast play page is at /podcasts/play/:id
+    window.location.href = `/podcasts/play/${podcastId}`;
+  }
+
+  // --- Status Polling Methods ---
+  _startPollingIfNeeded() {
+    const requiresPolling = this._allPodcasts.some(p => p.status === 'uploaded' || p.status === 'transcribing');
+
+    if (requiresPolling && !this._pollIntervalId) {
+      console.log("PodcastTableComponent: Starting status polling...");
+      this._pollIntervalId = setInterval(() => this._pollPodcastStatuses(), 10000); // Poll every 10 seconds
+    } else if (!requiresPolling && this._pollIntervalId) {
+      this._stopPolling();
+    }
+  }
+
+  _stopPolling() {
+    if (this._pollIntervalId) {
+      clearInterval(this._pollIntervalId);
+      this._pollIntervalId = null;
+      console.log("PodcastTableComponent: Status polling stopped.");
+    }
+  }
+
+  async _pollPodcastStatuses() {
+    console.log("PodcastTableComponent: Polling for status updates...");
+    const podcastsCurrentlyProcessing = this._allPodcasts.filter(p => p.status === 'uploaded' || p.status === 'transcribing');
+
+    if (podcastsCurrentlyProcessing.length === 0) {
+      this._stopPolling();
+      return;
+    }
+
+    try {
+      // Fetch the full list again to get the latest statuses
+      const response = await fetch(this._apiEndpoint);
+      if (!response.ok) {
+        console.error(`Polling failed: ${response.status}. Stopping poll.`);
+        this._stopPolling(); // Stop polling on API error to prevent spamming
+        return;
+      }
+      const latestPodcasts = await response.json();
+
+      let changed = false;
+      this._allPodcasts = this._allPodcasts.map(oldPodcast => {
+        const latestData = latestPodcasts.find(p => p.id === oldPodcast.id);
+        if (latestData && latestData.status !== oldPodcast.status) {
+          console.log(`Status changed for ${oldPodcast.id}: ${oldPodcast.status} -> ${latestData.status}`);
+          changed = true;
+          return { ...oldPodcast, ...latestData }; // Update with all latest data
+        }
+        return oldPodcast;
+      });
+
+      if (changed) {
+        this._render(); // Re-render if any status changed
+      }
+
+      // Check if polling still needed after updates
+      const stillProcessing = this._allPodcasts.some(p => p.status === 'uploaded' || p.status === 'transcribing');
+      if (!stillProcessing) {
+        this._stopPolling();
+      }
+
+    } catch (error) {
+      console.error("Error during status polling:", error);
+      // Potentially stop polling after a few consecutive errors
+    }
+  }
+
+  // --- User Message Display ---
+  _showMessage(text, type = 'info') { // type can be 'info', 'success', 'error'
+    const messageArea = this.shadowRoot.getElementById('component-message');
+    messageArea.textContent = text;
+    messageArea.className = 'message-area'; // Reset classes
+    if (type) {
+      messageArea.classList.add(type);
+    }
+  }
 }
 // Define the custom element
 customElements.define('podcast-table-component', PodcastTableComponent);
