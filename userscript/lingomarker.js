@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.9
+// @version      0.10
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -706,6 +706,14 @@
 
         // Fallback to window location
         let url = window.location.href;
+        // If the url is from the backend, return a relative url with a leading slash
+        if (url.startsWith(BACKEND_URL)) {
+            url = url.slice(BACKEND_URL.length);
+            if (!url.startsWith('/')) {
+                url = '/' + url;
+            }
+        }
+
         return url;
     }
 
