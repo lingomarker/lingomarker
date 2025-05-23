@@ -20,7 +20,7 @@
       box-sizing: border-box;
     }
 
-    .content-area h1 { /* Optional: Adjust h1 margin if needed */
+    .content-area h1 {
       margin-top: 0;
     }
 
@@ -32,8 +32,14 @@
       gap: 10px;
       align-items: center;
     }
+
+    .bottom-bar button {
+      padding: 8px 12px;
+      font-size: 16px;
+    }
   </style>
 </head>
+
 <body>
   <div class="content-area">
     <h1>Podcasts</h1>
@@ -45,6 +51,7 @@
   </div>
 
   <div class="bottom-bar">
+    <p><button id="reload-podcasts-button">Reload</button></p>
     <p><a href="/podcasts/upload">Upload New Podcast</a></p>
     <p><a href="/review">Review</a></p>
   </div>
@@ -54,6 +61,18 @@
     or ensure your Go server routes /static/js/podcast-table-component.js
   -->
   <script src="/static/js/podcast-table-component.js" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const reloadButton = document.getElementById('reload-podcasts-button');
+      const podcastTableComponent = document.querySelector('podcast-table-component');
+
+      if (reloadButton && podcastTableComponent) {
+        reloadButton.addEventListener('click', () => {
+          podcastTableComponent.reloadData();
+        });
+      }
+    });
+  </script>
 
 </body>
 

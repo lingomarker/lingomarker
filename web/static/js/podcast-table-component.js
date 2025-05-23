@@ -478,6 +478,12 @@ class PodcastTableComponent extends HTMLElement {
       messageArea.classList.add(type);
     }
   }
+
+  // --- Public Method for External Reload ---
+  reloadData() {
+    console.log('PodcastTableComponent: External reload triggered.');
+    this._fetchData();
+  }
 }
 // Define the custom element
 customElements.define('podcast-table-component', PodcastTableComponent);
