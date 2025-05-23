@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.10
+// @version      0.11
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -677,6 +677,17 @@
         return hashHex;
     }
 
+    function normalizeBackendUrl(url) {
+        if (url.startsWith(BACKEND_URL)) {
+            let relativeUrl = url.slice(BACKEND_URL.length);
+            if (!relativeUrl.startsWith('/')) {
+                relativeUrl = '/' + relativeUrl;
+            }
+            return relativeUrl;
+        }
+        return url;
+    }
+
     function getUrlFromNode(node) {
         // Find the nearest parent A tag with an href, or use window.location
         let current = node;
@@ -685,7 +696,7 @@
                 const child = current.firstChild;
                 if (child.nodeName === 'A' && child.href && child.className === 'review-source-link') {
                     // Special handling for review page
-                    return child.href;
+                    return normalizeBackendUrl(child.href);
                 }
             }
             if (current.nodeName === 'A' && current.href) {
@@ -694,7 +705,7 @@
                     // Internal link, prefer window.location.href
                 } else if (current.href.startsWith('http')) {
                     // Prefer the link's href if it's a full URL
-                    return current.href;
+                    return normalizeBackendUrl(current.href);
                 }
             }
             if (current.nodeName === 'P' && current.className === 'review-paragraph') {
@@ -705,16 +716,7 @@
         }
 
         // Fallback to window location
-        let url = window.location.href;
-        // If the url is from the backend, return a relative url with a leading slash
-        if (url.startsWith(BACKEND_URL)) {
-            url = url.slice(BACKEND_URL.length);
-            if (!url.startsWith('/')) {
-                url = '/' + url;
-            }
-        }
-
-        return url;
+        return normalizeBackendUrl(window.location.href);
     }
 
     async function getContextFromNode(node) {
