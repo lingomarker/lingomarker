@@ -96,7 +96,7 @@ func main() {
 
 	// Authenticated Web Pages
 	// Need to wrap handlers with middleware *before* passing to router
-	mux.Handle("POST", "/logout", authMW(http.HandlerFunc(webHandlers.HandleLogout))) // Assuming logout is POST
+	mux.Handle("GET", "/logout", authMW(http.HandlerFunc(webHandlers.HandleLogout))) // Changed to GET for simple link-based logout
 	mux.Handle("GET", "/training", authMW(http.HandlerFunc(webHandlers.HandleTrainingPage)))
 	mux.Handle("GET", "/settings", authMW(http.HandlerFunc(webHandlers.HandleSettingsPage)))
 	mux.Handle("POST", "/settings", authMW(http.HandlerFunc(webHandlers.HandleSettingsPage)))
