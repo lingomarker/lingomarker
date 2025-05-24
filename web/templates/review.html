@@ -78,21 +78,31 @@
       cursor: pointer;
       margin-left: 8px;
       font-size: 0.9em;
-      color: #007bff;
+      color: rgba(0, 123, 255, 0.55);
       text-decoration: none;
       position: absolute;
-      top: 8px;
-      right: 8px;
-    }
-
-    .review-paragraph .goto-segment-icon:hover {
-      text-decoration: underline;
+      top: -6px;
+      right: -8px;
     }
 
     .loading-message {
       text-align: center;
       padding: 20px;
       font-style: italic;
+    }
+
+    .review-paragraph .goto-segment-icon:hover {
+      color: #007bff;
+    }
+
+    .podcast-play-icon::before {
+      display: inline-block;
+      content: '▶︎';
+      font-family: sans-serif;
+      /* font-size: 1.4em; */
+      font-size: 1.4em;
+      font-style: normal;
+      font-weight: normal;
     }
   </style>
 </head>
@@ -161,7 +171,7 @@
               iconLink.href = `${source.sourceLink}#segment_timestamp=${encodeURIComponent(para.transcriptSegmentRef)}`;
               // Don't set target="_blank" for internal navigation
               const icon = document.createElement('i');
-              icon.classList.add('fa', 'fa-play'); // Play icon class
+              icon.classList.add('podcast-play-icon'); // Play icon class
               iconLink.appendChild(icon);
               paraDiv.appendChild(iconLink);
             }
