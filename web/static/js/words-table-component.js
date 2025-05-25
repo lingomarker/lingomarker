@@ -145,6 +145,7 @@ class WordsTableComponent extends HTMLElement {
                     justify-content: space-between;
                     align-items: center;
                     margin-top: 1em;
+                    margin-bottom: 1em;
                 }
                 .pagination-controls button {
                     padding: 8px 12px;
