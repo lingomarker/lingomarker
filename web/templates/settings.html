@@ -23,13 +23,16 @@
 
         .content-area h1 {
             margin-top: 0;
+            font-size: 1.4em;
+            text-align: center;
         }
 
         .bottom-bar {
             display: flex;
             padding: 10px;
             background-color: #f0f0f0;
-            box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
+            box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
+            /* Shadow on top */
             gap: 10px;
             align-items: center;
         }
@@ -54,11 +57,13 @@
                     <label for="geminiApiKey">Gemini API Key:</label>
                     <input type="password" id="geminiApiKey" name="geminiApiKey"
                         placeholder="{{ if .APIKeyIsSet }}********** (set){{ else }}Enter API Key{{ end }}" size="40">
-                    <small>Leave blank to keep current key, or enter new key to replace. Enter '-' to clear (or just leave
+                    <small>Leave blank to keep current key, or enter new key to replace. Enter '-' to clear (or just
+                        leave
                         empty now).</small>
                     <!-- Correction: Simpler instruction - Leave empty to keep current, enter new to replace/set -->
                     <!-- Update Feb 2024: Standard empty string is safer for clearing -->
-                    <br><small>Leave blank to keep current key. Enter a new key to update/set. <b>To clear the key, submit
+                    <br><small>Leave blank to keep current key. Enter a new key to update/set. <b>To clear the key,
+                            submit
                             an empty field.</b></small>
 
                 </div>
@@ -68,7 +73,8 @@
                 <legend>Highlighting & Selection</legend>
                 <div>
                     <label for="highlightColor">Highlight Color:</label>
-                    <input type="color" id="highlightColor" name="highlightColor" value="{{ .Settings.HighlightColor }}">
+                    <input type="color" id="highlightColor" name="highlightColor"
+                        value="{{ .Settings.HighlightColor }}">
                     <input type="text" value="{{ .Settings.HighlightColor }}"
                         oninput="document.getElementById('highlightColor').value = this.value" size="25">
                     <small>Choose color or enter RGBA/Hex value (e.g., rgba(255, 255, 0, 0.5) or #FFFF00).</small>
