@@ -69,8 +69,8 @@ class WordsTableComponent extends HTMLElement {
     if (this._currentSearchQuery) {
       const query = this._currentSearchQuery.toLowerCase();
       filtered = filtered.filter(item =>
-        (item.Word && item.Word.toLowerCase().includes(query)) ||
-        (item.FormsPipeSeparated && item.FormsPipeSeparated.toLowerCase().includes(query))
+        (item.word && item.word.toLowerCase().includes(query)) ||
+        (item.formsPipeSeparated && item.formsPipeSeparated.toLowerCase().includes(query))
       );
     }
     this._filteredWords = filtered;
@@ -270,14 +270,14 @@ class WordsTableComponent extends HTMLElement {
     const tbody = table.querySelector('tbody');
     this._wordsToDisplay.forEach(item => {
       const row = tbody.insertRow();
-      const formsDisplay = item.FormsPipeSeparated ? item.FormsPipeSeparated.split('|').map(f => this._escapeHtml(f.trim())).join(', ') : '';
+      const formsDisplay = item.formsPipeSeparated ? item.formsPipeSeparated.split('|').map(f => this._escapeHtml(f.trim())).join(', ') : '';
       row.innerHTML = `
-                <td>${this._escapeHtml(item.Word) || 'N/A'}</td>
+                <td>${this._escapeHtml(item.word) || 'N/A'}</td>
                 <td>${formsDisplay}</td>
-                <td>${item.UpdatedAt ? new Date(item.UpdatedAt).toLocaleDateString() : 'N/A'}</td>
-                <td><button class="delete-btn" data-uuid="${this._escapeHtml(item.UUID)}">Delete</button></td>
+                <td>${item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : 'N/A'}</td>
+                <td><button class="delete-btn" data-uuid="${this._escapeHtml(item.uuid)}">Delete</button></td>
             `;
-      row.querySelector('.delete-btn').addEventListener('click', () => this.handleDelete(item.UUID));
+      row.querySelector('.delete-btn').addEventListener('click', () => this.handleDelete(item.uuid));
     });
     container.appendChild(table);
   }
@@ -328,7 +328,7 @@ class WordsTableComponent extends HTMLElement {
         throw new Error(errorMsg);
       }
       // Remove from _allWords and re-render
-      this._allWords = this._allWords.filter(word => word.UUID !== uuid);
+      this._allWords = this._allWords.filter(word => word.uuid !== uuid);
       // Current page might become invalid, _applyFiltersAndPagination will adjust it.
       this._render();
     } catch (error) {
