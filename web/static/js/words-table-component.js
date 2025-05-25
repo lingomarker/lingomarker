@@ -98,20 +98,20 @@ class WordsTableComponent extends HTMLElement {
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
                     margin-top: 20px;
                 }
-                .toolbar {
-                    margin-bottom: 15px;
-                    display: flex;
-                    justify-content: flex-end;
+                .search-container {
+                    margin-bottom: 1em;
                 }
-                #search-input {
-                    padding: 8px 12px;
-                    border: 1px solid #dddfe2;
-                    border-radius: 6px;
-                    font-size: 0.9em;
-                    min-width: 250px;
+                .search-container input {
+                    padding: 0.5em;
+                    font-size: 1em;
+                    width: calc(100% - 1.2em); /* Adjust for padding */
+                    max-width: 400px;
+                    box-sizing: border-box;
+                    border: 1px solid #dddfe2; /* Keep existing border style */
+                    border-radius: 6px; /* Keep existing border-radius */
                 }
                 #table-container {
-                    overflow-x: auto; /* Allows horizontal scroll on very small screens if table content is too wide */
+                    overflow-x: auto;
                 }
                 table {
                     width: 100%;
@@ -214,8 +214,8 @@ class WordsTableComponent extends HTMLElement {
                 }
             </style>
             <h2>Words</h2>
-            <div class="toolbar">
-                <input type="search" id="search-input" placeholder="Search by Word or Forms...">
+            <div class="search-container">
+                <input type="search" id="search-input" placeholder="Search by Word or Forms..." />
             </div>
             <div id="table-container">
                 <!-- Table or cards will be rendered here -->
