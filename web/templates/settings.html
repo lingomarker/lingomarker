@@ -6,12 +6,13 @@
 <head>
     <style>
         body {
-            font-family: sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
             margin: 0;
             padding: 0;
             display: flex;
             flex-direction: column;
             height: 100vh;
+            background-color: #ffffff;
         }
 
         .content-area {
@@ -19,12 +20,109 @@
             overflow-y: auto;
             padding: 20px;
             box-sizing: border-box;
+            max-width: 900px; /* Limit content width for better readability */
+            margin: 0 auto; /* Center content area */
         }
 
         .content-area h1 {
             margin-top: 0;
             font-size: 1.4em;
             text-align: center;
+        }
+        
+        /* Form styling inspired by podcast_upload.html */
+        form {
+            background-color: #ffffff;
+            padding: 10px; /* Reduced padding as fieldsets have their own */
+            margin: 0 auto 20px auto;
+            /* max-width: 700px; /* Already handled by content-area max-width */
+        }
+
+        fieldset {
+            border: 1px solid #dddfe2;
+            border-radius: 6px;
+            margin-bottom: 25px; /* Increased margin between fieldsets */
+            padding: 15px 20px; /* Padding inside fieldset */
+        }
+
+        legend {
+            font-weight: 600;
+            color: #4b4f56;
+            padding: 0 10px;
+            font-size: 1.2em; /* Slightly larger legend */
+            margin-bottom: 15px; /* Space below legend inside fieldset */
+        }
+
+        form div {
+            margin-bottom: 20px; /* Increased space between form elements */
+        }
+
+        form label {
+            display: block;
+            margin-bottom: 8px; /* Increased space below label */
+            color: #4b4f56;
+            font-weight: 600;
+            font-size: 0.95em; /* Slightly larger label */
+        }
+
+        form input[type="text"],
+        form input[type="password"],
+        form input[type="url"],
+        form input[type="number"],
+        form textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #dddfe2;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 1em;
+            font-family: inherit;
+        }
+        
+        form input[type="color"] {
+             height: 40px; /* Align height with text inputs */
+             padding: 5px;
+             vertical-align: middle;
+        }
+
+        form input[type="text"][size="25"] { /* For the color text input */
+            width: auto; /* Don't force 100% */
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+
+        form textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        form small {
+            display: block;
+            margin-top: 6px; /* Increased space above small text */
+            font-size: 0.85em;
+            color: #606770;
+            line-height: 1.4;
+        }
+
+        /* Message styling */
+        .message, .error-message {
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin: 0 auto 20px auto; /* Center message */
+            max-width: 700px; /* Match form width */
+            text-align: center;
+            font-size: 0.95em;
+            box-sizing: border-box;
+        }
+        .message { /* Success message */
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724 !important;
+        }
+        .error-message { /* Error message */
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24 !important;
         }
 
         .bottom-bar {
@@ -36,6 +134,26 @@
             gap: 10px;
             align-items: center;
         }
+
+        .bottom-bar button,
+        form button[type="submit"] {
+            padding: 10px 15px; /* Consistent padding */
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em; /* Adjusted font size */
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+        }
+        form button[type="submit"] {
+            margin-top: 10px; /* Space above submit button */
+        }
+        .bottom-bar button:hover,
+        form button[type="submit"]:hover {
+            background-color: #0069d9;
+        }
     </style>
 </head>
 
@@ -44,10 +162,10 @@
         <h1>Settings for {{ .User.Username }}</h1>
 
         {{if .Message}}
-        <p style="color: green;">{{.Message}}</p>
+        <p class="message">{{.Message}}</p>
         {{end}}
         {{if .Error}}
-        <p style="color: red;">{{.Error}}</p>
+        <p class="error-message">{{.Error}}</p>
         {{end}}
 
         <form method="POST" action="/settings">
@@ -57,14 +175,8 @@
                     <label for="geminiApiKey">Gemini API Key:</label>
                     <input type="password" id="geminiApiKey" name="geminiApiKey"
                         placeholder="{{ if .APIKeyIsSet }}********** (set){{ else }}Enter API Key{{ end }}" size="40">
-                    <small>Leave blank to keep current key, or enter new key to replace. Enter '-' to clear (or just
-                        leave
-                        empty now).</small>
-                    <!-- Correction: Simpler instruction - Leave empty to keep current, enter new to replace/set -->
-                    <!-- Update Feb 2024: Standard empty string is safer for clearing -->
-                    <br><small>Leave blank to keep current key. Enter a new key to update/set. <b>To clear the key,
-                            submit
-                            an empty field.</b></small>
+                    <small>Leave blank to keep the current key. Enter a new key to update or set it.
+                        <b>To clear the key, submit an empty field.</b></small>
 
                 </div>
             </fieldset>
@@ -75,7 +187,7 @@
                     <label for="highlightColor">Highlight Color:</label>
                     <input type="color" id="highlightColor" name="highlightColor"
                         value="{{ .Settings.HighlightColor }}">
-                    <input type="text" value="{{ .Settings.HighlightColor }}"
+                    <input type="text" value="{{ .Settings.HighlightColor }}" placeholder="#RRGGBB or rgba(...)"
                         oninput="document.getElementById('highlightColor').value = this.value" size="25">
                     <small>Choose color or enter RGBA/Hex value (e.g., rgba(255, 255, 0, 0.5) or #FFFF00).</small>
                 </div>
@@ -111,12 +223,38 @@
 
             <button type="submit">Save Settings</button>
         </form>
+
+        <!-- Words Table Web Component -->
+        <words-table-component items-per-page="10"></words-table-component>
+
     </div>
 
     <div class="bottom-bar">
+        <button id="reload-words-button">Reload Words</button>
         <p><a href="/podcasts">Podcast List</a></p>
         <p><a href="/review">Review Page</a></p>
     </div>
+
+    <script src="/static/js/words-table-component.js" defer></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const reloadWordsButton = document.getElementById('reload-words-button');
+            const wordsTableComponent = document.querySelector('words-table-component');
+
+            if (reloadWordsButton && wordsTableComponent) {
+                reloadWordsButton.addEventListener('click', () => {
+                    wordsTableComponent.reloadData();
+                });
+            }
+
+            // Sync color input text field with color picker on load
+            const colorPicker = document.getElementById('highlightColor');
+            const colorText = document.querySelector('input[type="text"][oninput*="highlightColor"]');
+            if(colorPicker && colorText) {
+                colorText.value = colorPicker.value; // Ensure text field shows current color value
+            }
+        });
+    </script>
 </body>
 
 </html>
