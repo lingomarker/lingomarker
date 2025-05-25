@@ -11,7 +11,7 @@ class WordsTableComponent extends HTMLElement {
 
     this.currentPage = 1;
     this._currentSearchQuery = '';
-    this.searchTimeout = null;
+    this._searchTimeout = null; // Renamed for consistency (private-like property)
   }
 
   connectedCallback() {
@@ -227,15 +227,7 @@ class WordsTableComponent extends HTMLElement {
             </div>
         `;
 
-    this.shadowRoot.getElementById('search-input').addEventListener('input', (e) => {
-      clearTimeout(this.searchTimeout);
-      this.searchTimeout = setTimeout(() => {
-        this._currentSearchQuery = e.target.value.trim();
-        this.currentPage = 1; // Reset to first page on new search
-        this._render();
-      }, 400);
-    });
-
+    this.shadowRoot.getElementById('search-input').addEventListener('input', this._onSearch.bind(this));
     this.shadowRoot.getElementById('prev-button').addEventListener('click', this._onPrevPage.bind(this));
     this.shadowRoot.getElementById('next-button').addEventListener('click', this._onNextPage.bind(this));
   }
@@ -301,6 +293,18 @@ class WordsTableComponent extends HTMLElement {
     prevButton.disabled = this.currentPage === 1;
     nextButton.disabled = this.currentPage === totalPages || totalItems === 0;
   }
+
+  _onSearch(event) {
+    clearTimeout(this._searchTimeout);
+    const searchTerm = event.target.value; // Capture value immediately from the event
+
+    this._searchTimeout = setTimeout(() => {
+      this._currentSearchQuery = searchTerm.trim(); // Use the captured and trimmed value
+      this.currentPage = 1; // Reset to first page on new search
+      this._render();
+    }, 400); // Debounce time
+  }
+
 
   _onPrevPage() {
     if (this.currentPage > 1) {
