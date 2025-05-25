@@ -229,12 +229,12 @@ class WordsTableComponent extends HTMLElement {
         this.data.forEach(item => {
             const row = tbody.insertRow();
             row.innerHTML = `
-                <td>${item.Word || 'N/A'}</td>
-                <td>${item.FormsPipeSeparated ? item.FormsPipeSeparated.split('|').join(', ') : ''}</td>
-                <td>${new Date(item.UpdatedAt).toLocaleDateString()}</td>
-                <td><button class="delete-btn" data-uuid="${item.UUID}">Delete</button></td>
+                <td>${item.word || 'N/A'}</td>
+                <td>${item.formsPipeSeparated ? item.formsPipeSeparated.split('|').join(', ') : ''}</td>
+                <td>${new Date(item.updatedAt).toLocaleDateString()}</td>
+                <td><button class="delete-btn" data-uuid="${item.uuid}">Delete</button></td>
             `;
-            row.querySelector('.delete-btn').addEventListener('click', () => this.handleDelete(item.UUID));
+            row.querySelector('.delete-btn').addEventListener('click', () => this.handleDelete(item.uuid));
         });
         container.appendChild(table);
     }
