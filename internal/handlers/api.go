@@ -84,7 +84,7 @@ func (h *APIHandlers) HandleSessionCheck(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// HandleGetData retrieves all user data for highlighting
+// HandleGetData retrieves all user data (words a.k.a. entries) for highlighting
 func (h *APIHandlers) HandleGetData(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(UserIDContextKey).(int64)
 	bundle, err := h.DB.GetUserDataBundle(userID)

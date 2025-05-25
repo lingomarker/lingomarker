@@ -108,6 +108,7 @@ func main() {
 	// Authenticated API Endpoints
 	// Note: Register specific paths *before* prefixes if they might overlap
 	mux.Handle("GET", "/api/session", authMW(http.HandlerFunc(apiHandlers.HandleSessionCheck)))
+	// List words a.k.a. entries
 	mux.Handle("GET", "/api/data", authMW(http.HandlerFunc(apiHandlers.HandleGetData)))
 	mux.Handle("POST", "/api/mark", authMW(http.HandlerFunc(apiHandlers.HandleMarkWord)))
 	mux.Handle("GET", "/api/training/data", authMW(http.HandlerFunc(apiHandlers.HandleGetTrainingData)))
@@ -163,7 +164,7 @@ func main() {
 	// Add other prefix routes if needed, e.g., for GET /api/podcasts/{id}
 	// mux.HandlePrefix("GET", "/api/podcasts/", authMW(http.HandlerFunc(apiHandlers.HandleGetPodcast))) // Example for later
 
-	// Entry Deletion (Requires modification in handler to use GetPathParam)
+	// Entry/Word Deletion (Requires modification in handler to use GetPathParam)
 	// Assuming /api/entries/{uuid}
 	mux.HandlePrefix("DELETE", "/api/entries/", authMW(http.HandlerFunc(apiHandlers.HandleDeleteEntry))) // Use prefix
 

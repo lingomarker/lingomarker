@@ -486,7 +486,7 @@ func (db *DB) DeleteEntryAndRelations(userID int64, entryUUID string) error {
 	return tx.Commit() // Commit the transaction
 }
 
-// GetUserDataBundle retrieves all necessary data for the UserScript highlighting
+// GetUserDataBundle retrieves all necessary data (words a.k.a. entries) for the UserScript highlighting
 func (db *DB) GetUserDataBundle(userID int64) (*models.UserDataBundle, error) {
 	bundle := &models.UserDataBundle{
 		Entries:    make([]models.Entry, 0),
