@@ -1,61 +1,97 @@
 class WordsTableComponent extends HTMLElement {
-    constructor() {
-        super();
-        this.attachShadow({ mode: 'open' });
-        this.itemsPerPage = parseInt(this.getAttribute('items-per-page')) || 10;
-        this.currentPage = 1;
-        this.searchTerm = '';
-        this.data = [];
-        this.totalItems = 0;
-        this.searchTimeout = null;
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+    this.itemsPerPage = parseInt(this.getAttribute('items-per-page')) || 10;
+
+    // Client-side data management
+    this._allWords = []; // Holds all fetched words
+    this._filteredWords = []; // Holds words after search
+    this._wordsToDisplay = []; // Holds words for the current page
+
+    this.currentPage = 1;
+    this._currentSearchQuery = '';
+    this.searchTimeout = null;
+  }
+
+  connectedCallback() {
+    this.renderLayout();
+    this.fetchData();
+  }
+
+  _escapeHtml(unsafe) {
+    if (unsafe === null || typeof unsafe === 'undefined') return '';
+    return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  static get observedAttributes() {
+    return ['items-per-page'];
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (name === 'items-per-page' && oldValue !== newValue) {
+      this.itemsPerPage = parseInt(newValue) || 10;
+      if (this.shadowRoot.innerHTML) { // Check if component is already rendered
+        this.currentPage = 1; // Reset to first page
+        this._render(); // Re-render with new itemsPerPage
+      }
     }
+  }
 
-    connectedCallback() {
-        this.renderLayout();
-        this.fetchData();
+  async fetchData() {
+    const tableContainer = this.shadowRoot.getElementById('table-container');
+    if (tableContainer) tableContainer.innerHTML = '<p class="loading-message">Loading words...</p>';
+
+    // Fetch all data. Assumes /api/data without params returns all entries.
+    const apiUrl = `/api/data`;
+    try {
+      const response = await fetch(apiUrl);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      const result = await response.json();
+      this._allWords = result.entries || [];
+    } catch (error) {
+      console.error('Failed to fetch words:', error);
+      this._allWords = [];
+      if (tableContainer) tableContainer.innerHTML = `<p class="error-message">Error loading words: ${error.message}</p>`;
     }
+    this.currentPage = 1; // Reset to first page
+    this._currentSearchQuery = this.shadowRoot.getElementById('search-input')?.value || ''; // Preserve existing search term or clear
+    this._render();
+  }
 
-    static get observedAttributes() {
-        return ['items-per-page'];
+  _applyFiltersAndPagination() {
+    let filtered = [...this._allWords];
+
+    // 1. Apply Search Filter
+    if (this._currentSearchQuery) {
+      const query = this._currentSearchQuery.toLowerCase();
+      filtered = filtered.filter(item =>
+        (item.Word && item.Word.toLowerCase().includes(query)) ||
+        (item.FormsPipeSeparated && item.FormsPipeSeparated.toLowerCase().includes(query))
+      );
     }
+    this._filteredWords = filtered;
 
-    attributeChangedCallback(name, oldValue, newValue) {
-        if (name === 'items-per-page' && oldValue !== newValue) {
-            this.itemsPerPage = parseInt(newValue) || 10;
-            if (this.shadowRoot.innerHTML) { // Check if component is already rendered
-                this.fetchData(1, this.searchTerm); // Refetch data with new itemsPerPage
-            }
-        }
-    }
+    // 2. Apply Pagination
+    const totalPages = Math.ceil(this._filteredWords.length / this.itemsPerPage);
+    this.currentPage = Math.max(1, Math.min(this.currentPage, totalPages || 1));
 
-    async fetchData(page = this.currentPage, searchTerm = this.searchTerm) {
-        const tableContainer = this.shadowRoot.getElementById('table-container');
-        if (tableContainer) tableContainer.innerHTML = '<p class="loading-message">Loading words...</p>';
+    const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+    const endIndex = startIndex + this.itemsPerPage;
+    this._wordsToDisplay = this._filteredWords.slice(startIndex, endIndex);
+  }
 
-        const apiUrl = `/api/data?page=${page}&limit=${this.itemsPerPage}&search=${encodeURIComponent(searchTerm)}`;
-        try {
-            const response = await fetch(apiUrl);
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-            }
-            const result = await response.json();
-            this.data = result.entries || [];
-            this.totalItems = result.total || 0;
-            this.currentPage = page;
-            this.searchTerm = searchTerm;
-        } catch (error) {
-            console.error('Failed to fetch words:', error);
-            this.data = [];
-            this.totalItems = 0;
-            if (tableContainer) tableContainer.innerHTML = `<p class="error-message">Error loading words: ${error.message}</p>`;
-        }
-        this.renderTableContent();
-        this.renderPagination();
-    }
+  _render() {
+    this._applyFiltersAndPagination();
+    this.renderTableContent();
+    this.renderPagination();
+  }
 
-    renderLayout() {
-        this.shadowRoot.innerHTML = `
+  renderLayout() {
+    this.shadowRoot.innerHTML = `
             <style>
                 :host {
                     display: block;
@@ -196,25 +232,31 @@ class WordsTableComponent extends HTMLElement {
             </div>
         `;
 
-        this.shadowRoot.getElementById('search-input').addEventListener('input', (e) => {
-            clearTimeout(this.searchTimeout);
-            this.searchTimeout = setTimeout(() => {
-                this.fetchData(1, e.target.value.trim());
-            }, 400);
-        });
+    this.shadowRoot.getElementById('search-input').addEventListener('input', (e) => {
+      clearTimeout(this.searchTimeout);
+      this.searchTimeout = setTimeout(() => {
+        this._currentSearchQuery = e.target.value.trim();
+        this.currentPage = 1; // Reset to first page on new search
+        this._render();
+      }, 400);
+    });
+  }
+
+  renderTableContent() {
+    const container = this.shadowRoot.getElementById('table-container');
+    container.innerHTML = '';
+
+    if (this._wordsToDisplay.length === 0) {
+      if (this._currentSearchQuery) {
+        container.innerHTML = `<p class="no-data-message">No words match your search "${this._escapeHtml(this._currentSearchQuery)}".</p>`;
+      } else {
+        container.innerHTML = '<p class="no-data-message">No words found.</p>';
+      }
+      return;
     }
 
-    renderTableContent() {
-        const container = this.shadowRoot.getElementById('table-container');
-        container.innerHTML = ''; 
-
-        if (this.data.length === 0) {
-            container.innerHTML = '<p class="no-data-message">No words found.</p>';
-            return;
-        }
-
-        const table = document.createElement('table');
-        table.innerHTML = `
+    const table = document.createElement('table');
+    table.innerHTML = `
             <thead>
                 <tr>
                     <th>Word</th>
@@ -225,68 +267,80 @@ class WordsTableComponent extends HTMLElement {
             </thead>
             <tbody></tbody>
         `;
-        const tbody = table.querySelector('tbody');
-        this.data.forEach(item => {
-            const row = tbody.insertRow();
-            row.innerHTML = `
-                <td>${item.word || 'N/A'}</td>
-                <td>${item.formsPipeSeparated ? item.formsPipeSeparated.split('|').join(', ') : ''}</td>
-                <td>${new Date(item.updatedAt).toLocaleDateString()}</td>
-                <td><button class="delete-btn" data-uuid="${item.uuid}">Delete</button></td>
+    const tbody = table.querySelector('tbody');
+    this._wordsToDisplay.forEach(item => {
+      const row = tbody.insertRow();
+      const formsDisplay = item.FormsPipeSeparated ? item.FormsPipeSeparated.split('|').map(f => this._escapeHtml(f.trim())).join(', ') : '';
+      row.innerHTML = `
+                <td>${this._escapeHtml(item.Word) || 'N/A'}</td>
+                <td>${formsDisplay}</td>
+                <td>${item.UpdatedAt ? new Date(item.UpdatedAt).toLocaleDateString() : 'N/A'}</td>
+                <td><button class="delete-btn" data-uuid="${this._escapeHtml(item.UUID)}">Delete</button></td>
             `;
-            row.querySelector('.delete-btn').addEventListener('click', () => this.handleDelete(item.uuid));
-        });
-        container.appendChild(table);
-    }
+      row.querySelector('.delete-btn').addEventListener('click', () => this.handleDelete(item.UUID));
+    });
+    container.appendChild(table);
+  }
 
-    renderPagination() {
-        const container = this.shadowRoot.getElementById('pagination-container');
-        container.innerHTML = '';
-        const totalPages = Math.ceil(this.totalItems / this.itemsPerPage);
+  renderPagination() {
+    const container = this.shadowRoot.getElementById('pagination-container');
+    container.innerHTML = '';
+    const totalPages = Math.ceil(this._filteredWords.length / this.itemsPerPage);
 
-        if (totalPages <= 1) return;
+    if (totalPages <= 1) return;
 
-        const prevButton = document.createElement('button');
-        prevButton.textContent = 'Previous';
-        prevButton.disabled = this.currentPage === 1;
-        prevButton.addEventListener('click', () => this.fetchData(this.currentPage - 1, this.searchTerm));
-        container.appendChild(prevButton);
+    const prevButton = document.createElement('button');
+    prevButton.textContent = 'Previous';
+    prevButton.disabled = this.currentPage === 1;
+    prevButton.addEventListener('click', () => {
+      if (this.currentPage > 1) {
+        this.currentPage--;
+        this._render();
+      }
+    });
+    container.appendChild(prevButton);
 
-        const pageInfo = document.createElement('span');
-        pageInfo.textContent = `Page ${this.currentPage} of ${totalPages}`;
-        container.appendChild(pageInfo);
+    const pageInfo = document.createElement('span');
+    pageInfo.textContent = `Page ${this.currentPage} of ${totalPages}`;
+    container.appendChild(pageInfo);
 
-        const nextButton = document.createElement('button');
-        nextButton.textContent = 'Next';
-        nextButton.disabled = this.currentPage === totalPages;
-        nextButton.addEventListener('click', () => this.fetchData(this.currentPage + 1, this.searchTerm));
-        container.appendChild(nextButton);
-    }
+    const nextButton = document.createElement('button');
+    nextButton.textContent = 'Next';
+    nextButton.disabled = this.currentPage === totalPages;
+    nextButton.addEventListener('click', () => {
+      this.currentPage++;
+      this._render();
+    });
+    container.appendChild(nextButton);
+  }
 
-    async handleDelete(uuid) {
-        if (!confirm('Are you sure you want to delete this word entry?')) return;
+  async handleDelete(uuid) {
+    if (!confirm('Are you sure you want to delete this word entry?')) return;
 
+    try {
+      const response = await fetch(`/api/entries/${uuid}`, { method: 'DELETE' });
+      if (!response.ok) {
+        let errorMsg = `Failed to delete word. Status: ${response.status}`;
         try {
-            const response = await fetch(`/api/entries/${uuid}`, { method: 'DELETE' });
-            if (!response.ok) {
-                let errorMsg = `Failed to delete word. Status: ${response.status}`;
-                try {
-                    const errData = await response.json();
-                    errorMsg = errData.error || errData.message || errorMsg;
-                } catch (e) { /* ignore if response is not json */ }
-                throw new Error(errorMsg);
-            }
-            // Optionally show a success message
-            this.fetchData(this.currentPage, this.searchTerm); // Refresh data
-        } catch (error) {
-            console.error('Delete error:', error);
-            alert(`Error deleting word: ${error.message}`);
-        }
+          const errData = await response.json();
+          errorMsg = errData.error || errData.message || errorMsg;
+        } catch (e) { /* ignore if response is not json */ }
+        throw new Error(errorMsg);
+      }
+      // Remove from _allWords and re-render
+      this._allWords = this._allWords.filter(word => word.UUID !== uuid);
+      // Current page might become invalid, _applyFiltersAndPagination will adjust it.
+      this._render();
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert(`Error deleting word: ${error.message}`);
     }
+  }
 
-    reloadData() {
-        this.shadowRoot.getElementById('search-input').value = ''; // Clear search input
-        this.fetchData(1, ''); // Reset to first page and clear search term
-    }
+  reloadData() {
+    this.shadowRoot.getElementById('search-input').value = ''; // Clear search input
+    this._currentSearchQuery = '';
+    this.fetchData(); // Refetch all data and render from page 1
+  }
 }
 customElements.define('words-table-component', WordsTableComponent);
