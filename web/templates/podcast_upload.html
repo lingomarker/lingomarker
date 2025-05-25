@@ -6,32 +6,178 @@
 <head>
   <style>
     body {
-      font-family: sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
       margin: 0;
-      padding: 0;
       display: flex;
       flex-direction: column;
       height: 100vh;
+      background-color: #ffffff;
+      /* White background for the form */
     }
 
     .content-area {
       flex: 1;
       overflow-y: auto;
-      padding: 20px;
+      padding: 20px 0 0 0;
+      /* Padding for the overall content area */
       box-sizing: border-box;
     }
 
     .content-area h1 {
       margin-top: 0;
+      margin-bottom: 15px;
+      color: #1c1e21;
+      /* Darker text color */
+      font-size: 1.8em;
+      text-align: center;
+    }
+
+    /* Form container styling */
+    #upload-form {
+      background-color: #ffffff;
+      /* White background for the form */
+      padding: 10px 10px;
+      margin: 0 auto 20px auto;
+      /* Center form, add some bottom margin */
+    }
+
+    fieldset {
+      border: 1px solid #dddfe2;
+      border-radius: 6px;
+      margin-bottom: 20px;
+    }
+
+    legend {
+      font-weight: 600;
+      color: #4b4f56;
+      /* Consistent with label color */
+      padding: 0 10px;
+      /* Add some padding around legend text */
+      font-size: 1.1em;
+      margin-bottom: 10px;
+      /* Space below legend inside fieldset */
+    }
+
+    /* Form elements */
+    #upload-form .fieldset-1 div:not(:last-of-type) {
+      margin-bottom: 15px;
+    }
+
+    #upload-form .fieldset-2 div:not(:last-of-type) {
+      margin-bottom: 15px;
+    }
+
+    #upload-form label {
+      display: block;
+      margin-bottom: 5px;
+      color: #4b4f56;
+      font-weight: 600;
+      font-size: 0.9em;
+    }
+
+    #upload-form input[type="text"],
+    #upload-form input[type="file"],
+    #upload-form textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #dddfe2;
+      border-radius: 6px;
+      box-sizing: border-box;
+      font-size: 1em;
+      font-family: inherit;
+      /* Ensure form elements inherit body font */
+    }
+
+    #upload-form textarea {
+      resize: vertical;
+      /* Allow vertical resizing */
+      min-height: 80px;
+      /* Sensible min height */
+    }
+
+    #upload-form input[type="file"] {
+      padding: 8px 12px;
+      /* Adjusted padding for file input */
+    }
+
+    #upload-form small {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.85em;
+      color: #606770;
     }
 
     .bottom-bar {
       display: flex;
       padding: 10px;
       background-color: #f0f0f0;
-      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Shadow on top */
+      box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
       gap: 10px;
       align-items: center;
+    }
+
+    /* Submit button and spinner */
+    #submit-button {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1.05em;
+      font-weight: 600;
+      transition: background-color 0.2s ease-in-out;
+      margin-top: 1.5em;
+      /* More space before button */
+    }
+
+    #submit-button:hover {
+      background-color: #0069d9;
+    }
+
+    #submit-button:disabled {
+      background-color: #007bffb3;
+      /* Lighter when disabled */
+      cursor: not-allowed;
+    }
+
+    #spinner {
+      display: none;
+      /* Initial: JS toggles to 'block' */
+      text-align: center;
+      margin-top: 10px;
+      font-size: 0.9em;
+      color: #555;
+    }
+
+    /* Upload message styling */
+    #upload-message {
+      padding: 10px 15px;
+      border-radius: 6px;
+      margin: 0 auto 10px auto;
+      /* Center message above form */
+      max-width: 700px;
+      /* Match form width */
+      text-align: center;
+      font-size: 0.95em;
+      box-sizing: border-box;
+      /* Ensure it's not display:none initially if it can have content */
+      min-height: 1.5em;
+      /* Reserve some space or manage visibility */
+    }
+
+    #upload-message.success {
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724 !important;
+    }
+
+    #upload-message.error {
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24 !important;
     }
   </style>
 </head>
@@ -40,45 +186,49 @@
   <div class="content-area">
     <h1>Upload New Podcast Episode</h1>
 
-    <div id="upload-message" style="margin-bottom: 1em;"></div> <!-- For success/error messages -->
+    <div id="upload-message"></div> <!-- For success/error messages -->
 
     <!-- Use multipart/form-data for file uploads -->
     <form id="upload-form" method="POST" action="/api/podcasts" enctype="multipart/form-data">
-      <fieldset>
+      <fieldset class="fieldset-1">
         <legend>Episode Details</legend>
         <div>
-          <label for="producer">Producer:</label><br>
-          <input type="text" id="producer" name="producer" required size="50" placeholder="e.g., NPR">
+          <label for="producer">Producer:</label>
+          <input type="text" id="producer" name="producer" required placeholder="e.g., NPR">
         </div>
         <div>
-          <label for="series">Series:</label><br>
-          <input type="text" id="series" name="series" required size="50" placeholder="e.g., It's Been a Minute">
+          <label for="series">Series:</label>
+          <input type="text" id="series" name="series" required placeholder="e.g., It's Been a Minute">
         </div>
         <div>
-          <label for="episode">Episode Title:</label><br>
-          <input type="text" id="episode" name="episode" required size="70" placeholder="e.g., The Rise of the Pumpkin Spice Latte">
+          <label for="episode">Episode Title:</label>
+          <input type="text" id="episode" name="episode" required
+            placeholder="e.g., The Rise of the Pumpkin Spice Latte">
         </div>
         <div>
-          <label for="description">Episode Description (Optional):</label><br>
-          <textarea id="description" name="description" rows="4" cols="70" placeholder="Optional summary of the episode..."></textarea>
+          <label for="description">Episode Description (Optional):</label>
+          <textarea id="description" name="description" rows="4"
+            placeholder="Optional summary of the episode..."></textarea>
         </div>
       </fieldset>
 
-      <fieldset>
+      <fieldset class="fieldset-2">
         <legend>Audio & Transcript</legend>
         <div>
-          <label for="audio_file">Audio File:</label><br>
-          <input type="file" id="audio_file" name="audio_file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg" required>
+          <label for="audio_file">Audio File:</label>
+          <input type="file" id="audio_file" name="audio_file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg"
+            required>
           <small>(Allowed: mp3, m4a, wav, ogg)</small>
         </div>
-        <div style="margin-top: 1em;">
-          <label for="original_transcript">Original Transcript (Optional):</label><br>
-          <textarea id="original_transcript" name="original_transcript" rows="8" cols="70" placeholder="Paste existing transcript text here, if available..."></textarea>
+        <div>
+          <label for="original_transcript">Original Transcript (Optional):</label>
+          <textarea id="original_transcript" name="original_transcript" rows="8"
+            placeholder="Paste existing transcript text here, if available..."></textarea>
         </div>
       </fieldset>
 
-      <button type="submit" id="submit-button" style="margin-top: 1em;">Upload and Transcribe</button>
-      <span id="spinner" style="display: none; margin-left: 10px;">⏳ Uploading...</span>
+      <button type="submit" id="submit-button">Upload and Transcribe</button>
+      <span id="spinner" style="display: none;">⏳ Uploading...</span>
 
     </form>
   </div>
@@ -98,9 +248,9 @@
       event.preventDefault(); // Stop default form submission
 
       messageDiv.textContent = ''; // Clear previous messages
-      messageDiv.style.color = 'inherit';
+      messageDiv.className = 'upload-message'; // Reset classes, remove success/error
       submitButton.disabled = true;
-      spinner.style.display = 'inline-block';
+      spinner.style.display = 'block'; // Show spinner as a block element
 
       const formData = new FormData(form);
 
@@ -120,18 +270,18 @@
 
         if (response.ok && response.status === 202) { // Check for 202 Accepted
           messageDiv.textContent = `✅ ${result.message || 'Upload successful, transcription started.'} (ID: ${result.podcastId})`;
-          messageDiv.style.color = 'green';
+          messageDiv.classList.add('success');
           form.reset(); // Clear the form on success
         } else {
           // Handle errors returned in JSON body or based on status code
           messageDiv.textContent = `❌ Error: ${result.error || `Upload failed with status ${response.status}`}`;
-          messageDiv.style.color = 'red';
+          messageDiv.classList.add('error');
         }
 
       } catch (error) {
         console.error('Upload error:', error);
         messageDiv.textContent = `❌ Network Error: ${error.message || 'Could not connect to server.'}`;
-        messageDiv.style.color = 'red';
+        messageDiv.classList.add('error');
       } finally {
         submitButton.disabled = false;
         spinner.style.display = 'none';
