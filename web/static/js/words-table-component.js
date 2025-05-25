@@ -87,7 +87,7 @@ class WordsTableComponent extends HTMLElement {
   _render() {
     this._applyFiltersAndPagination();
     this.renderTableContent();
-    this.renderPagination();
+    this._renderPaginationControls();
   }
 
   renderLayout() {
@@ -140,24 +140,17 @@ class WordsTableComponent extends HTMLElement {
                 .delete-btn:hover {
                     background-color: #c82333;
                 }
-                .pagination-container {
-                    margin-top: 15px;
-                    text-align: center;
+                .pagination-controls {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-top: 1em;
                 }
-                .pagination-container button, .pagination-container span {
-                    margin: 0 5px;
-                    padding: 6px 10px;
-                    border: 1px solid #dddfe2;
-                    background-color: #fff;
-                    border-radius: 4px;
-                    cursor: pointer;
+                .pagination-controls button {
+                    padding: 8px 12px;
                 }
-                .pagination-container button:disabled {
-                    cursor: not-allowed;
-                    opacity: 0.6;
-                }
-                .pagination-container span {
-                    cursor: default;
+                .pagination-info {
+                    font-size: 0.9em;
                 }
                 .loading-message, .error-message, .no-data-message {
                     text-align: center;
@@ -227,8 +220,10 @@ class WordsTableComponent extends HTMLElement {
             <div id="table-container">
                 <!-- Table or cards will be rendered here -->
             </div>
-            <div id="pagination-container">
-                <!-- Pagination controls will be rendered here -->
+            <div class="pagination-controls">
+                <button id="prev-button" disabled>Previous</button>
+                <span id="pagination-info" class="pagination-info">Page 1 of 1</span>
+                <button id="next-button" disabled>Next</button>
             </div>
         `;
 
@@ -240,6 +235,9 @@ class WordsTableComponent extends HTMLElement {
         this._render();
       }, 400);
     });
+
+    this.shadowRoot.getElementById('prev-button').addEventListener('click', this._onPrevPage.bind(this));
+    this.shadowRoot.getElementById('next-button').addEventListener('click', this._onNextPage.bind(this));
   }
 
   renderTableContent() {
@@ -282,38 +280,44 @@ class WordsTableComponent extends HTMLElement {
     container.appendChild(table);
   }
 
-  renderPagination() {
-    const container = this.shadowRoot.getElementById('pagination-container');
-    container.innerHTML = '';
+  _renderPaginationControls() {
+    const prevButton = this.shadowRoot.getElementById('prev-button');
+    const nextButton = this.shadowRoot.getElementById('next-button');
+    const paginationInfo = this.shadowRoot.getElementById('pagination-info');
+
+    const totalItems = this._filteredWords.length;
     const totalPages = Math.ceil(this._filteredWords.length / this.itemsPerPage);
 
-    if (totalPages <= 1) return;
+    // this.currentPage is already adjusted in _applyFiltersAndPagination
 
-    const prevButton = document.createElement('button');
-    prevButton.textContent = 'Previous';
+    if (totalItems === 0) {
+        paginationInfo.textContent = 'No words';
+    } else {
+        const startItem = (this.currentPage - 1) * this.itemsPerPage + 1;
+        const endItem = Math.min(this.currentPage * this.itemsPerPage, totalItems);
+        paginationInfo.textContent = `Showing ${startItem}-${endItem} of ${totalItems} (Page ${this.currentPage} of ${totalPages})`;
+    }
+
     prevButton.disabled = this.currentPage === 1;
-    prevButton.addEventListener('click', () => {
-      if (this.currentPage > 1) {
-        this.currentPage--;
-        this._render();
-      }
-    });
-    container.appendChild(prevButton);
-
-    const pageInfo = document.createElement('span');
-    pageInfo.textContent = `Page ${this.currentPage} of ${totalPages}`;
-    container.appendChild(pageInfo);
-
-    const nextButton = document.createElement('button');
-    nextButton.textContent = 'Next';
-    nextButton.disabled = this.currentPage === totalPages;
-    nextButton.addEventListener('click', () => {
-      this.currentPage++;
-      this._render();
-    });
-    container.appendChild(nextButton);
+    nextButton.disabled = this.currentPage === totalPages || totalItems === 0;
   }
 
+  _onPrevPage() {
+    if (this.currentPage > 1) {
+      this.currentPage--;
+      this._render();
+    }
+  }
+
+  _onNextPage() {
+    const totalPages = Math.ceil(this._filteredWords.length / this.itemsPerPage);
+    if (this.currentPage < totalPages) {
+      this.currentPage++;
+      this._render();
+    }
+  }
+
+  
   async handleDelete(uuid) {
     if (!confirm('Are you sure you want to delete this word entry?')) return;
 
