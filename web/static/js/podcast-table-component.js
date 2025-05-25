@@ -13,6 +13,7 @@ class PodcastTableComponent extends HTMLElement {
     this._itemsPerPage = parseInt(this.getAttribute('items-per-page'), 10) || 10;
     this._currentSearchQuery = '';
 
+    this._searchTimeout = null;
     this._apiEndpoint = this.getAttribute('api-endpoint') || '/api/podcasts';
     this._pollIntervalId = null;
 
@@ -327,10 +328,17 @@ class PodcastTableComponent extends HTMLElement {
 
   // --- Event Handlers (stubs for now, to be fully implemented) ---
   _onSearch(event) {
-    this._currentSearchQuery = event.target.value;
-    this._currentPage = 1; // Reset to first page on new search
-    this._render();
+    clearTimeout(this._searchTimeout);
+    const searchTerm = event.target.value; // Capture value immediately
+
+    this._searchTimeout = setTimeout(() => {
+      this._currentSearchQuery = searchTerm.trim(); // Use the captured and trimmed value
+      this._currentPage = 1; // Reset to first page on new search
+      this._render();
+    }, 400); // Debounce time (e.g., 400ms)
   }
+
+
 
   _onPrevPage() {
     if (this._currentPage > 1) {
