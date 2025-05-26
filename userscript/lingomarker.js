@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.11
+// @version      0.12
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -24,10 +24,6 @@
 // @match        https://*.faz.net/*
 // @match        https://*.lemonde.fr/*
 // @match        https://*.lingea.sk/*
-// @match        https://www.lingomarker.com/review
-// @match        https://www.lingomarker.com/podcasts/play/*
-// @match        https://dev.lingomarker.com:8443/review*
-// @match        https://dev.lingomarker.com:8443/podcasts/play/*
 // @include      http://127.0.0.1:3000/*
 // @connect      dev.lingomarker.com
 // @grant        GM_addStyle

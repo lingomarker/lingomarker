@@ -116,7 +116,7 @@
 
 <body>
   <div class="content-area">
-        <h1>Review</h1>
+    <h1>Review</h1>
     <div id="review-container">
       <p class="loading-message">Loading review items...</p>
     </div>
@@ -135,7 +135,7 @@
     // Simple HTML escaping
     function escapeHtml(unsafe) {
       if (typeof unsafe !== 'string') return '';
-      return unsafe.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">").replace(/"/g, "\"").replace(/'/g, "'");
+      return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
     function renderReviewData(sources) {
@@ -249,6 +249,20 @@
     }
     // Run it
     initScrollPositionSaver();
+  </script>
+
+  <!-- LingoMarker Library and Dependencies -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mark.js/8.11.1/mark.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+  <script src="/static/js/lingomarker.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.LingoMarker) {
+        window.LingoMarker.init();
+      } else {
+        console.error('LingoMarker library not loaded.');
+      }
+    });
   </script>
 </body>
 
