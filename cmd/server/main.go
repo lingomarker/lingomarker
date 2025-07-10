@@ -69,7 +69,7 @@ func main() {
 
 	// --- Initialize Transcription Service ---
 	transcriptionCfg := &transcription.Config{
-		ModelName: "gemini-2.5-flash-preview-05-20", // Make this configurable later if needed
+		ModelName: "gemini-2.5-flash", // Make this configurable later if needed
 	}
 	transcriptionSvc := transcription.NewService(transcriptionCfg)
 

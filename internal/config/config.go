@@ -74,7 +74,7 @@ func LoadConfig(path string) (*Config, error) {
 		Gemini: struct {
 			APIEndpoint string `yaml:"api_endpoint"`
 		}{
-			APIEndpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", // Or your preferred model
+			APIEndpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", // Or your preferred model
 		},
 		Web: struct {
 			TemplateDir string `yaml:"template_dir"`

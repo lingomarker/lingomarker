@@ -212,10 +212,18 @@ func (h *APIHandlers) HandleMarkWord(w http.ResponseWriter, r *http.Request) {
 		}
 		// --- End Gemini API Call ---
 
+		var word string
+
+		if len(wordForms) > 0 {
+			word = strings.Split(wordForms, "|")[0]
+		} else {
+			word = req.Word		
+		}
+
 		newEntry := &models.Entry{
 			UUID:               entryUUID,
 			UserID:             userID,
-			Word:               req.Word,
+			Word:               word,
 			FormsPipeSeparated: wordForms,
 			// CreatedAt/UpdatedAt set by DB default/trigger
 		}
@@ -280,6 +288,7 @@ func callGeminiForEntryForms(cfg *config.Config, apiKey, entry string) (string, 
 	prompt := fmt.Sprintf(`List all possible forms (including verb conjugations, plural forms, etc.) of the provided word/phrase "%s", separated by the pipe symbol '|'. Do not include any additional text or explanations.
  For example, if the input word is any of the words "glitch", "glitches", the output will be "glitch|glitches".
  For example, if the input word is any of the words "run", "runs" , "ran", "running", the output will be "run|runs|ran|running".
+ For example, if the input word is any of the words "spare", "sparer" , "sparest", "sparely", "spares", "spared", "sparing", the output will be "spare|sparer|sparest|sparely|spares|spared|sparing".
  For example, if the input phrase is any of the phrases "freak out", "freaks out", "freaked out", "freaking out", the output will be "freak out|freaks out|freaked out|freaking out".
  For example, if the input phrase is any of the phrases "loan shark", "loan sharks", the output will be "loan shark|loan sharks".
  For example, if the input phrase is any of the phrases "off the cuff", "off-the-cuff", the output will be "off the cuff|off-the-cuff".
@@ -298,7 +307,7 @@ func callGeminiForEntryForms(cfg *config.Config, apiKey, entry string) (string, 
 		// Add safety settings or generation config if needed
 		"generationConfig": map[string]interface{}{
 			"temperature":     0.3, // Adjust as needed
-			"maxOutputTokens": 100,
+			"maxOutputTokens": 2048,
 		},
 		"safetySettings": []map[string]string{
 			{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
