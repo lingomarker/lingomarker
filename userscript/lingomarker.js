@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.12
+// @version      0.19
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -32,7 +32,7 @@
 // @grant        GM_openInTab
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @require      https://cdnjs.cloudflare.com/ajax/libs/mark.js/8.11.1/mark.min.js
+// @require      https://dev.lingomarker.com:8443/static/js/mark.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js
 // @run-at       document-body
 // ==/UserScript==
@@ -406,10 +406,35 @@
                     acrossElements: true,
                     separateWordSearch: false,
                     iframes: false,
+                    // The app.ft.com shadow comments section
+                    shadowDOM: {
+                        style: `
+                        :root { /* Define property on root */
+                            --lingomarker-highlight-bg: ${highlightColor}; /* Set initial/default value */
+                            --lingomarker-highlight-bg-hover: ${highlightColor.replace('0.4', '0.6')}; /* Calculate hover default too */
+                        }
+
+                        .lingomarker-highlight {
+                            background-color: var(--lingomarker-highlight-bg) !important; /* Use the variable */
+                            cursor: pointer;
+                            transition: background-color 0.2s;
+                            text-decoration: none;
+                            padding-bottom: 1px;
+                            border-bottom: 1px dotted currentColor;
+                        }
+                        .lingomarker-highlight:hover {
+                            background-color: var(--lingomarker-highlight-bg-hover) !important; /* Use hover variable */
+                        }
+                        `},
                     each: async (node) => {
                         // Optional: Add click/hover listeners here if needed
                         // E.g., to show definition popup or update relation timestamp on click
                         node.addEventListener('click', handleHighlightClick);
+                        // The app.ft.com shadow comments section
+                        // A shadow root is the DocumentFragment
+                        if (node.getRootNode().nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+                            // node.style.color = 'red'; // use the shadowDOM option instead
+                        }
                     },
                     done: () => {
                         // console.log('Marking done');
@@ -585,8 +610,18 @@
             dialog = document.createElement('div');
             dialog.className = 'lingomarker-dialog notranslate';
             // Positioning & Styling (as before)
-            const range = selection.getRangeAt(0).cloneRange();
-            const rect = range.getBoundingClientRect();
+            // The app.ft.com shadow comments section
+            const shadowRoots = document.getElementById("coral-shadow-container")?.shadowRoot ? [document.getElementById("coral-shadow-container").shadowRoot] : [];
+            const shadowRanges = selection.getComposedRanges({ shadowRoots: shadowRoots });
+            const staticRange = (shadowRanges && shadowRanges.length > 0) ? shadowRanges[0] : null;
+            let range = selection.getRangeAt(0);
+            let staticRangeRect = null;
+            if (range.collapsed && !staticRange?.collapsed) {
+                if (staticRange && staticRange.startContainer.nodeType === Node.TEXT_NODE) {
+                    staticRangeRect = staticRange.startContainer.parentElement.getBoundingClientRect();
+                }
+            }
+            const rect = staticRangeRect ? staticRangeRect : range.getBoundingClientRect();
             Object.assign(dialog.style, {
                 position: 'absolute',
                 left: `${rect.left + window.scrollX}px`,
@@ -749,7 +784,17 @@
             const urlHash = await sha256(url);
             const urlFragment = nodeUrl.includes('#') ? nodeUrl.split('#')[1] : null;
             const titleText = (document.title || "").trim();
-            const finalTitle = urlFragment ? `${titleText} #${urlFragment}` : titleText;
+            // The app.ft.com headline titles
+            let ftTitle = null;
+            const ftTitles = document.querySelectorAll('.headline__text');
+            for (let i = 0; i < ftTitles.length; i++) {
+                const contentId = ftTitles[i].closest('.article').dataset.contentId
+                if (contentId && url.includes(contentId)) {
+                    ftTitle = ftTitles[i].innerText;
+                    break;
+                }
+            }
+            const finalTitle = ftTitle ? `${ftTitle} : ${titleText}` : urlFragment ? `${titleText} #${urlFragment}` : titleText;
 
             return {
                 paragraphText: paragraphText,
@@ -821,6 +866,20 @@
             // console.log('Observer connected');
         } catch (e) {
             console.error('Error connecting MutationObserver:', e);
+        }
+        // The app.ft.com shadow comments section
+        const shadowDOM = document.getElementById("coral-shadow-container")?.shadowRoot;
+        if (shadowDOM) {
+            try {
+                mutationObserverInstance.observe(shadowDOM, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true,
+                });
+                // console.log('Observer connected to shadow DOM');
+            } catch (e) {
+                console.error('Error connecting MutationObserver to shadow DOM:', e);
+            }
         }
     }
 
@@ -952,14 +1011,26 @@
             return;
         }
         const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || selection.rangeCount === 0) { return; }
-
-        const node = selection.focusNode;
+        // The app.ft.com shadow comments section
+        if (!selection || selection.rangeCount === 0) { return; }
+        let node = selection.focusNode;
         if (!node) { return; }
 
         // Check if inside highlight
-        const range = selection.getRangeAt(0);
-        const commonAncestor = range.commonAncestorContainer;
+        // The app.ft.com shadow comments section
+        const shadowRoots = document.getElementById("coral-shadow-container")?.shadowRoot ? [document.getElementById("coral-shadow-container").shadowRoot] : [];
+        const shadowRanges = selection.getComposedRanges({ shadowRoots: shadowRoots });
+        const staticRange = (shadowRanges && shadowRanges.length > 0) ? shadowRanges[0] : null;
+        let range = selection.getRangeAt(0);
+        // console.log('Static Range:', staticRange?.collapsed, 'Range:', range.collapsed);
+        if (range.collapsed && staticRange?.collapsed) { return; }
+        if (range.collapsed && !staticRange?.collapsed) {
+            if (staticRange && staticRange.startContainer.nodeType === Node.TEXT_NODE) {
+                node = staticRange.startContainer;
+            }
+            range = staticRange;
+        }
+        const commonAncestor = range.startContainer === range.endContainer ? range.startContainer : null; // range.commonAncestorContainer
         let isInsideHighlight = false;
         if (commonAncestor) {
             if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) { isInsideHighlight = true; }
