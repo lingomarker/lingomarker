@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.19
+// @version      0.20
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -783,16 +783,21 @@
 
             const urlHash = await sha256(url);
             const urlFragment = nodeUrl.includes('#') ? nodeUrl.split('#')[1] : null;
-            const titleText = (document.title || "").trim();
+            let titleText = (document.title || "").trim();
             // The app.ft.com headline titles
             let ftTitle = null;
             const ftTitles = document.querySelectorAll('.headline__text');
             for (let i = 0; i < ftTitles.length; i++) {
-                const contentId = ftTitles[i].closest('.article').dataset.contentId
+                const contentId = ftTitles[i].closest('.article')?.dataset?.contentId;
                 if (contentId && url.includes(contentId)) {
                     ftTitle = ftTitles[i].innerText;
                     break;
                 }
+            }
+            // The www.ft.com headline titles
+            if (ftTitles.length === 1 && !ftTitle) {
+                ftTitle = ftTitles[0].innerText;
+                titleText = 'FT'; // Hardcoded
             }
             const finalTitle = ftTitle ? `${ftTitle} : ${titleText}` : urlFragment ? `${titleText} #${urlFragment}` : titleText;
 
@@ -1056,13 +1061,26 @@
     function handleMouseUpSelection() {
         const selection = window.getSelection();
         // Add isDialogActive check here too for consistency
-        if (!isDialogActive && selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.toString().trim() !== '') {
-            const node = selection.focusNode;
-            if (!node) return;
+        if (!isDialogActive && selection && selection.rangeCount > 0 && selection.toString().trim() !== '') {
+            // The app.ft.com shadow comments section
+            let node = selection.focusNode;
+            if (!node) { return; }
 
             // Check if inside highlight
-            const range = selection.getRangeAt(0);
-            const commonAncestor = range.commonAncestorContainer;
+            // The app.ft.com shadow comments section
+            const shadowRoots = document.getElementById("coral-shadow-container")?.shadowRoot ? [document.getElementById("coral-shadow-container").shadowRoot] : [];
+            const shadowRanges = selection.getComposedRanges({ shadowRoots: shadowRoots });
+            const staticRange = (shadowRanges && shadowRanges.length > 0) ? shadowRanges[0] : null;
+            let range = selection.getRangeAt(0);
+            // console.log('Static Range:', staticRange?.collapsed, 'Range:', range.collapsed);
+            if (range.collapsed && staticRange?.collapsed) { return; }
+            if (range.collapsed && !staticRange?.collapsed) {
+                if (staticRange && staticRange.startContainer.nodeType === Node.TEXT_NODE) {
+                    node = staticRange.startContainer;
+                }
+                range = staticRange;
+            }
+            const commonAncestor = range.startContainer === range.endContainer ? range.startContainer : null; // range.commonAncestorContainer
             let isInsideHighlight = false;
             if (commonAncestor) { /* ... highlight check logic ... */ }
             if (isInsideHighlight) {
