@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.20
+// @version      0.21
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -782,7 +782,7 @@
                 : nodeUrl.split('#')[0]; // Remove fragment otherwise
 
             const urlHash = await sha256(url);
-            const urlFragment = nodeUrl.includes('#') ? nodeUrl.split('#')[1] : null;
+            let urlFragment = nodeUrl.includes('#') ? nodeUrl.split('#')[1] : null;
             let titleText = (document.title || "").trim();
             // The app.ft.com headline titles
             let ftTitle = null;
@@ -798,8 +798,35 @@
             if (ftTitles.length === 1 && !ftTitle) {
                 ftTitle = ftTitles[0].innerText;
                 titleText = 'FT'; // Hardcoded
+            } else if (url.includes('www.lemonde.fr')) {
+                const leMonde = 'Le Monde'; // Hardcoded
+                if (urlFragment) { urlFragment += ` | ${leMonde}`; } else { titleText += ` | ${leMonde}`; }
+            } else if (url.includes('www.npr.org')) {
+                const npr = 'NPR'; // Hardcoded
+                titleText = titleText.replace(' : NPR', '');
+                if (urlFragment) { urlFragment += ` | ${npr}`; } else { titleText += ` | ${npr}`; }
+            } else if (url.includes('www.nytimes.com')) {
+                const nyTimes = 'NYT'; // Hardcoded
+                titleText = titleText.replace(' - The New York Times', '');
+                if (urlFragment) { urlFragment += ` | ${nyTimes}`; } else { titleText += ` | ${nyTimes}`; }
+            } else if (url.includes('www.bbc.com')) {
+                const bbc = 'BBC'; // Hardcoded
+                titleText = titleText.replace(' - BBC News', '');
+                if (urlFragment) { urlFragment += ` | ${bbc}`; } else { titleText += ` | ${bbc}`; }
+            } else if (url.includes('www.thebulwark.com')) {
+                const theBulwark = 'The Bulwark'; // Hardcoded
+                titleText = titleText.replace(' - The Bulwark', '');
+                if (urlFragment) { urlFragment += ` | ${theBulwark}`; } else { titleText += ` | ${theBulwark}`; }
+            } else if (url.includes('www.pbs.org')) {
+                const pbs = 'PBS'; // Hardcoded
+                if (urlFragment) { urlFragment += ` | ${pbs}`; } else { titleText += ` | ${pbs}`; }
+            } else if (url.includes('www.theatlantic.com')) {
+                const theAtlantic = 'The Atlantic'; // Hardcoded
+                titleText = titleText.replace(' - The Atlantic', '');
+                if (urlFragment) { urlFragment += ` | ${theAtlantic}`; } else { titleText += ` | ${theAtlantic}`; }
             }
-            const finalTitle = ftTitle ? `${ftTitle} : ${titleText}` : urlFragment ? `${titleText} #${urlFragment}` : titleText;
+
+            const finalTitle = ftTitle ? `${ftTitle} | ${titleText}` : urlFragment ? `${titleText} #${urlFragment}` : titleText;
 
             return {
                 paragraphText: paragraphText,
