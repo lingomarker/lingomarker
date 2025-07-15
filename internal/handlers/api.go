@@ -217,7 +217,7 @@ func (h *APIHandlers) HandleMarkWord(w http.ResponseWriter, r *http.Request) {
 		if len(wordForms) > 0 {
 			word = strings.Split(wordForms, "|")[0]
 		} else {
-			word = req.Word		
+			word = req.Word
 		}
 
 		newEntry := &models.Entry{
@@ -283,6 +283,8 @@ func callGeminiForEntryForms(cfg *config.Config, apiKey, entry string) (string, 
 	if entry == "" {
 		return "", errors.New("word cannot be empty")
 	}
+
+	log.Printf("API callGeminiForEntryForms: %s", entry)
 
 	// Use the prompt generation logic from the UserScript
 	prompt := fmt.Sprintf(`List all possible forms (including verb conjugations, plural forms, etc.) of the provided word/phrase "%s", separated by the pipe symbol '|'. Do not include any additional text or explanations.

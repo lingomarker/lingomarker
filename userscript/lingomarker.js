@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingoMarker
 // @namespace    http://tampermonkey.net/
-// @version      0.21
+// @version      0.22
 // @description  Highlight and store selected words via LingoMarker backend
 // @author       1token & AI Assistant
 // @match        https://*.reuters.com/*
@@ -588,7 +588,7 @@
     // --- Selection Handling ---
 
     // --- Dialog Functions ---
-    function showContextDialog(selection, caption, callback) {
+    function showContextDialog(selection, word, caption, callback) {
         lastTrigger = Date.now();
 
         let dialog = document.querySelector('.lingomarker-dialog');
@@ -606,6 +606,8 @@
                 // NOTE: window.getSelection().removeAllRanges(); // <<< REMOVED
             }, 5000);
             dialog.dataset.timeoutId = timeoutId; // Store ID to clear it
+            dialog.dataset.word = word; // Store word
+            dialog.dataset.caption = caption; // Store caption
         } else {
             dialog = document.createElement('div');
             dialog.className = 'lingomarker-dialog notranslate';
@@ -639,6 +641,9 @@
                 padding: '8px 5px 8px 5px'
             });
 
+            dialog.dataset.word = word; // Store word
+            dialog.dataset.caption = caption; // Store caption
+
             // --- Dialog Click (Confirmation) ---
             dialog.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -647,7 +652,7 @@
                 closeDialogVisuals(dialog); // Close visuals only
                 clearTimeout(dialog.dataset.timeoutId); // Clear timeout manually
                 document.removeEventListener('click', outsideClickListener, true); // Remove outside listener
-                if (callback) callback(); // Execute the marking logic (which handles state/selection)
+                if (callback) callback(dialog.dataset.caption, dialog.dataset.word); // Execute the marking logic (which handles state/selection)
             });
 
             if (mutationObserverInstance) mutationObserverInstance.disconnect();
@@ -937,7 +942,7 @@
         // --- End Validation ---
 
         // --- Check if Known Word ---
-        const existingEntry = findEntryByWordForm(word);
+        /*const existingEntry = findEntryByWordForm(word);
         if (existingEntry) {
             if (isDialogActive) {
                 const dialog = document.querySelector('.lingomarker-dialog');
@@ -965,7 +970,7 @@
             // ACTION: Clear selection because we acted on it (timestamp).
             /// if (window.getSelection) window.getSelection().removeAllRanges();
             return; // Don't show dialog
-        }
+        }*/
         // --- End Check Known Word ---
 
 
@@ -975,7 +980,7 @@
         isDialogActive = true;
 
         // Show the context dialog
-        showContextDialog(selection, caption, async () => {
+        showContextDialog(selection, word, caption, async (word, caption) => {
             // --- Dialog Confirmation Callback ---
             console.log(`Marking new word from dialog: "${caption}"`);
             // Get context using the original node

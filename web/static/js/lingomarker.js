@@ -238,7 +238,7 @@
             console.error(`LingoMarker Network Error accessing ${path}:`, error);
             // If it's a TypeError, it's often a CORS issue or network down.
             if (error instanceof TypeError && error.message === "Failed to fetch") {
-                 console.error("Fetch failed. This could be a CORS issue if accessing a different origin, or the server is down. Ensure the backend is configured for CORS if necessary.");
+                console.error("Fetch failed. This could be a CORS issue if accessing a different origin, or the server is down. Ensure the backend is configured for CORS if necessary.");
             }
             throw new Error("Network error or backend unreachable");
         }
@@ -392,14 +392,14 @@
                 }
             }
         } else if (window.location.pathname.startsWith('/review')) {
-             let elementForClosest = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+            let elementForClosest = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
             if (elementForClosest) {
                 // Adjusted selector for review page based on its structure
                 const paragraphElement = elementForClosest.closest('.review-paragraph');
                 if (paragraphElement) {
                     const segmentIcon = paragraphElement.querySelector("a.goto-segment-icon");
                     if (segmentIcon && segmentIcon.href && segmentIcon.href.includes('#segment_timestamp=')) {
-                         try {
+                        try {
                             const urlParams = new URLSearchParams(segmentIcon.href.split('#')[1]);
                             transcriptSegmentRef = urlParams.get('segment_timestamp');
                         } catch (e) {
@@ -472,12 +472,14 @@
 
     // --- Selection Handling & Dialog ---
 
-    function showContextDialog(selection, caption, callback) {
+    function showContextDialog(selection, word, caption, callback) {
         lastTrigger = Date.now();
         let dialog = document.querySelector('.lingomarker-dialog');
 
         if (dialog) { // If dialog exists, clear its timeout and reuse it
             if (dialog.dataset.timeoutId) clearTimeout(dialog.dataset.timeoutId);
+            dialog.dataset.word = word; // Store word
+            dialog.dataset.caption = caption; // Store caption
         } else { // Create new dialog
             dialog = document.createElement('div');
             dialog.className = 'lingomarker-dialog notranslate'; // notranslate to prevent translation services
@@ -488,13 +490,16 @@
                 top: `${rect.bottom + window.scrollY + (touchScreen ? 28 : 5)}px`,
             });
 
+            dialog.dataset.word = word; // Store word
+            dialog.dataset.caption = caption; // Store caption
+
             dialog.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 closeDialogVisuals(dialog);
                 if (dialog.dataset.timeoutId) clearTimeout(dialog.dataset.timeoutId);
                 document.removeEventListener('click', outsideClickListener, true);
-                if (callback) callback();
+                if (callback) callback(dialog.dataset.caption, dialog.dataset.word);
             });
 
             if (mutationObserverInstance) mutationObserverInstance.disconnect();
@@ -563,7 +568,7 @@
     function getUrlFromNode(node) {
         let current = node;
         while (current && current !== document.body) {
-             // Special handling for review page source links
+            // Special handling for review page source links
             if (current.nodeName === 'H3' && current.classList.contains('review-source-title')) {
                 const child = current.querySelector('a.review-source-link');
                 if (child && child.href) {
@@ -577,10 +582,10 @@
                     return normalizeBackendUrl(current.href);
                 }
             }
-             // Handle traversing up from a paragraph on the review page
+            // Handle traversing up from a paragraph on the review page
             if (current.classList && current.classList.contains('review-paragraph')) {
                 let sibling = current.previousElementSibling;
-                while(sibling) {
+                while (sibling) {
                     if (sibling.nodeName === 'H3' && sibling.classList.contains('review-source-title')) {
                         const link = sibling.querySelector('a.review-source-link');
                         if (link && link.href) return normalizeBackendUrl(link.href);
@@ -709,7 +714,7 @@
             return;
         }
 
-        const existingEntry = findEntryByWordForm(word);
+        /*const existingEntry = findEntryByWordForm(word);
         if (existingEntry) {
             if (isDialogActive) {
                 const dialog = document.querySelector('.lingomarker-dialog');
@@ -737,12 +742,12 @@
             // Consider if selection should be cleared here.
             // if (window.getSelection) window.getSelection().removeAllRanges();
             return;
-        }
+        }*/
 
         console.log(`New word selected: "${caption}". Preparing dialog.`);
         isDialogActive = true;
 
-        showContextDialog(selection, caption, async () => {
+        showContextDialog(selection, word, caption, async (word, caption) => {
             console.log(`Marking new word from dialog: "${caption}"`);
             const context = await getContextFromNode(node); // Use original node for context
             if (!context) {
@@ -771,7 +776,7 @@
                     // A full refresh might be safer or use a more robust cache update
                     await fetchUserDataAndHighlight(); // Refresh data and highlights
                 } else {
-                     await fetchUserDataAndHighlight(); // Fallback refresh
+                    await fetchUserDataAndHighlight(); // Fallback refresh
                 }
 
             } catch (error) {
@@ -824,8 +829,8 @@
             const commonAncestor = range.commonAncestorContainer;
             let isInsideHighlight = false;
             if (commonAncestor) {
-                 if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) isInsideHighlight = true;
-                 else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) isInsideHighlight = true;
+                if (commonAncestor.nodeType === Node.ELEMENT_NODE && commonAncestor.classList?.contains('lingomarker-highlight')) isInsideHighlight = true;
+                else if (commonAncestor.parentElement?.closest('.lingomarker-highlight')) isInsideHighlight = true;
             }
 
             if (isInsideHighlight) {
@@ -911,8 +916,8 @@
                 return;
             }
             if (!markInstance) {
-                 console.warn("Cannot reload data: Mark.js not initialized.");
-                 return;
+                console.warn("Cannot reload data: Mark.js not initialized.");
+                return;
             }
             console.log("Reloading LingoMarker data via API call...");
             await fetchUserDataAndHighlight();
